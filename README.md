@@ -108,7 +108,3 @@ flowchart TD
 - 实现统一 Tool Registry 与 Hook Pipeline，在 Bash、文件读写、Worktree、部署类 MCP 工具执行前进行安全拦截与审计日志记录。
 - 支持 Task Graph、后台任务、Cron Scheduler 与 Git Worktree 隔离开发，模拟真实 Coding Agent 的长任务执行和团队协作流程。
 - 提供 Streamlit 可视化界面与 pytest 基础测试，便于演示 Agent 状态、任务列表、定时任务和内存文件。
-
-## 与原始 s20 的关系
-
-原始 s20 的定位是“把所有教学组件合并回一个 loop”的最终章节；本项目保留其核心机制，并按工程化职责拆分，方便后续继续接入真实 MCP Server、前端 Dashboard、权限策略配置和更完整的测试集。

@@ -13,6 +13,7 @@ config.yaml
 .mailboxes/
 .worktrees/
 .sessions/
+.transcripts/
 
 # Python bytecode and caches
 __pycache__/

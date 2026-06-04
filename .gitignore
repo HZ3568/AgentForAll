@@ -12,6 +12,7 @@ config.yaml
 .memory/
 .mailboxes/
 .worktrees/
+.sessions/
 
 # Python bytecode and caches
 __pycache__/

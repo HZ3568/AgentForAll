@@ -10,6 +10,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from web.agent_session import clear_agent_session, init_agent_session, run_agent_turn
+from web.conversation_sidebar import render_conversation_sidebar
 from web.dashboard import render_dashboard_tab, render_memory_tab, render_tasks_tab
 from web.renderers import export_display_messages, render_chat_message, render_runtime_panel
 
@@ -17,6 +18,7 @@ from web.renderers import export_display_messages, render_chat_message, render_r
 st.set_page_config(page_title="CodeAgent-Harness", layout="wide")
 
 runtime, _, _ = init_agent_session()
+render_conversation_sidebar()
 
 st.title("CodeAgent-Harness")
 st.caption(f"Workspace: `{runtime.settings.workdir}`")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from typing import Any
 
 from codeagent.core.context import compact_history, extract_text, has_tool_use, prepare_context, reactive_compact
@@ -155,7 +156,12 @@ def print_turn_assistants(runtime: Any, messages: list, turn_start: int) -> None
             terminal_print(str(content), runtime.settings.prompt, runtime.cli_active)
 
 
-def cron_autorun_loop(runtime: Any, history: list, context: dict) -> None:
+def cron_autorun_loop(
+    runtime: Any,
+    history: list,
+    context: dict,
+    on_history_changed: Callable[[], Any] | None = None,
+) -> None:
     from codeagent.core.console import terminal_print
 
     while True:
@@ -169,5 +175,8 @@ def cron_autorun_loop(runtime: Any, history: list, context: dict) -> None:
                 history.append({"role": "user", "content": f"[Scheduled] {job.prompt}"})
                 terminal_print(f"  \033[35m[cron auto] {job.prompt[:60]}\033[0m", runtime.settings.prompt, runtime.cli_active)
             agent_loop(runtime, history, context)
-            context.update(runtime.update_context(context, history))
+            context.clear()
+            context.update(runtime.update_context({}, history))
             print_turn_assistants(runtime, history, turn_start)
+            if on_history_changed:
+                on_history_changed()

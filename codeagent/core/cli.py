@@ -4,7 +4,6 @@ import threading
 from typing import Any
 
 from codeagent.core.loop import agent_loop, cron_autorun_loop, print_turn_assistants
-from codeagent.core.runtime import create_runtime
 from codeagent.sessions.store import ConversationStore
 
 
@@ -152,6 +151,8 @@ def append_lead_inbox(runtime: Any, history: list) -> None:
 
 
 def main() -> None:
+    from codeagent.core.runtime import create_runtime
+
     runtime = create_runtime()
     runtime.cli_active = True
     store = ConversationStore(runtime.settings.workdir)

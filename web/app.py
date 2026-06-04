@@ -1,54 +1,75 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
+import sys
 
 import streamlit as st
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from web.agent_session import clear_agent_session, init_agent_session, run_agent_turn
+from web.dashboard import render_dashboard_tab, render_memory_tab, render_tasks_tab
+from web.renderers import export_display_messages, render_chat_message, render_runtime_panel
+
+
 st.set_page_config(page_title="CodeAgent-Harness", layout="wide")
-st.title("CodeAgent-Harness Dashboard")
 
-workdir = Path.cwd()
-st.caption(f"Workspace: `{workdir}`")
+runtime, _, _ = init_agent_session()
 
-col1, col2, col3, col4 = st.columns(4)
+st.title("CodeAgent-Harness")
+st.caption(f"Workspace: `{runtime.settings.workdir}`")
 
-with col1:
-    tasks = sorted((workdir / ".tasks").glob("task_*.json")) if (workdir / ".tasks").exists() else []
-    st.metric("Tasks", len(tasks))
-with col2:
-    crons = workdir / ".scheduled_tasks.json"
-    cron_count = len(json.loads(crons.read_text(encoding="utf-8"))) if crons.exists() else 0
-    st.metric("Cron Jobs", cron_count)
-with col3:
-    memory_dir = workdir / ".memory"
-    memories = memory_dir / "MEMORY.md"
-    memory_files = [p for p in memory_dir.glob("*.md") if p.name != "MEMORY.md"] if memory_dir.exists() else []
-    st.metric("Memory", len(memory_files))
-with col4:
-    worktrees = list((workdir / ".worktrees").iterdir()) if (workdir / ".worktrees").exists() else []
-    st.metric("Worktrees", len([p for p in worktrees if p.is_dir()]))
+chat_tab, dashboard_tab, memory_tab, tasks_tab = st.tabs(
+    ["Chat", "Dashboard", "Memory", "Tasks"]
+)
 
-st.subheader("Tasks")
-if tasks:
-    rows = []
-    for path in tasks:
-        try:
-            rows.append(json.loads(path.read_text(encoding="utf-8")))
-        except Exception:
-            pass
-    st.dataframe(rows, use_container_width=True)
-else:
-    st.info("No tasks found. Run the CLI and ask the agent to create tasks.")
+with chat_tab:
+    chat_col, meta_col = st.columns([0.72, 0.28], gap="large")
 
-st.subheader("Scheduled Jobs")
-if crons.exists():
-    st.json(json.loads(crons.read_text(encoding="utf-8")))
-else:
-    st.info("No durable cron file found.")
+    with meta_col:
+        if st.button("清空会话", use_container_width=True):
+            clear_agent_session()
+            st.rerun()
 
-st.subheader("Memory Preview")
-if memories.exists():
-    st.code(memories.read_text(encoding="utf-8")[:4000])
-else:
-    st.info("No memory index found yet. The agent creates `.memory/MEMORY.md` after durable memories are extracted.")
+        json_data, markdown_data = export_display_messages(st.session_state.display_messages)
+        st.download_button(
+            "导出 JSON",
+            data=json_data,
+            file_name="codeagent_chat.json",
+            mime="application/json",
+            use_container_width=True,
+        )
+        st.download_button(
+            "导出 Markdown",
+            data=markdown_data,
+            file_name="codeagent_chat.md",
+            mime="text/markdown",
+            use_container_width=True,
+        )
+
+        render_runtime_panel(runtime, st.session_state.context)
+
+    with chat_col:
+        st.subheader("Chat")
+        if not st.session_state.display_messages:
+            st.info("输入问题后，Web 会复用现有 Agent Loop 执行完整对话。")
+
+        for message in st.session_state.display_messages:
+            render_chat_message(message)
+
+        prompt = st.chat_input("Ask CodeAgent-Harness")
+        if prompt:
+            with st.spinner("Agent is thinking..."):
+                run_agent_turn(prompt)
+            st.rerun()
+
+with dashboard_tab:
+    render_dashboard_tab(runtime.settings.workdir)
+
+with memory_tab:
+    render_memory_tab(runtime.settings.workdir)
+
+with tasks_tab:
+    render_tasks_tab(runtime.settings.workdir)

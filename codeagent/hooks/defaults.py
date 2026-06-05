@@ -5,7 +5,7 @@ from typing import Any
 from codeagent.tools.basic import safe_path
 
 DENY_LIST = ["rm -rf /", "sudo", "shutdown", "reboot", "mkfs", "dd if="]
-DESTRUCTIVE = ["rm ", "> /etc/", "chmod 777"]
+DESTRUCTIVE = ["rm ", "> /etc/", "chmod 777", "rmdir"]
 
 
 def make_permission_hook(runtime: Any):
@@ -28,7 +28,9 @@ def make_permission_hook(runtime: Any):
             except Exception:
                 return f"Permission denied: path escapes workspace: {path}"
         if block.name.startswith("mcp__") and "deploy" in block.name:
-            print(f"\n\033[33m[permission] MCP destructive-looking tool: {block.name}\033[0m")
+            print(
+                f"\n\033[33m[permission] MCP destructive-looking tool: {block.name}\033[0m"
+            )
             choice = input("  Allow? [y/N] ").strip().lower()
             if choice not in ("y", "yes"):
                 return "Permission denied by user"
@@ -44,7 +46,9 @@ def log_hook(block: Any) -> None:
 
 def large_output_hook(block: Any, output: str) -> None:
     if len(str(output)) > 100000:
-        print(f"\033[33m[HOOK] large output from {block.name}: {len(str(output))} chars\033[0m")
+        print(
+            f"\033[33m[HOOK] large output from {block.name}: {len(str(output))} chars\033[0m"
+        )
     return None
 
 
@@ -62,7 +66,11 @@ def stop_hook(messages: list) -> None:
     for msg in messages:
         content = msg.get("content")
         if isinstance(content, list):
-            tool_count += sum(1 for item in content if isinstance(item, dict) and item.get("type") == "tool_result")
+            tool_count += sum(
+                1
+                for item in content
+                if isinstance(item, dict) and item.get("type") == "tool_result"
+            )
     print(f"\033[90m[HOOK] Stop: {tool_count} tool result(s)\033[0m")
     return None
 

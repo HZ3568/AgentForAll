@@ -10,7 +10,9 @@ def extract_text(content: Any) -> str:
     if not isinstance(content, list):
         return str(content)
     return "\n".join(
-        getattr(block, "text", "") for block in content if getattr(block, "type", None) == "text"
+        getattr(block, "text", "")
+        for block in content
+        if getattr(block, "type", None) == "text"
     ).strip()
 
 
@@ -52,15 +54,23 @@ def tool_result_budget(runtime: Any, messages: list, max_bytes: int = 200_000) -
     content = last.get("content")
     if last.get("role") != "user" or not isinstance(content, list):
         return messages
-    blocks = [(i, b) for i, b in enumerate(content) if isinstance(b, dict) and b.get("type") == "tool_result"]
+    blocks = [
+        (i, b)
+        for i, b in enumerate(content)
+        if isinstance(b, dict) and b.get("type") == "tool_result"
+    ]
     total = sum(len(str(b.get("content", ""))) for _, b in blocks)
     if total <= max_bytes:
         return messages
-    for _, block in sorted(blocks, key=lambda pair: len(str(pair[1].get("content", ""))), reverse=True):
+    for _, block in sorted(
+        blocks, key=lambda pair: len(str(pair[1].get("content", ""))), reverse=True
+    ):
         if total <= max_bytes:
             break
         text = str(block.get("content", ""))
-        block["content"] = persist_large_output(runtime, block.get("tool_use_id", "unknown"), text)
+        block["content"] = persist_large_output(
+            runtime, block.get("tool_use_id", "unknown"), text
+        )
         total = sum(len(str(b.get("content", ""))) for _, b in blocks)
     return messages
 
@@ -70,7 +80,11 @@ def snip_compact(messages: list, max_messages: int = 50) -> list:
         return messages
     keep_head, keep_tail = 3, max_messages - 3
     snipped = len(messages) - keep_head - keep_tail
-    return messages[:keep_head] + [{"role": "user", "content": f"[snipped {snipped} messages]"}] + messages[-keep_tail:]
+    return (
+        messages[:keep_head]
+        + [{"role": "user", "content": f"[snipped {snipped} messages]"}]
+        + messages[-keep_tail:]
+    )
 
 
 def micro_compact(runtime: Any, messages: list) -> list:
@@ -120,13 +134,16 @@ def reactive_compact(runtime: Any, messages: list) -> list:
         summary = summarize_history(runtime, messages)
     except Exception:
         summary = "Earlier conversation was trimmed after a prompt-too-long error."
-    return [{"role": "user", "content": f"[Reactive compact]\n\n{summary}"}, *messages[-5:]]
+    return [
+        {"role": "user", "content": f"[Reactive compact]\n\n{summary}"},
+        *messages[-5:],
+    ]
 
 
 def prepare_context(runtime: Any, messages: list) -> list:
-    messages[:] = tool_result_budget(runtime, messages)
-    messages[:] = snip_compact(messages)
-    messages[:] = micro_compact(runtime, messages)
+    messages[:] = tool_result_budget(runtime, messages)  # 大结果落盘
+    messages[:] = snip_compact(messages)  # 裁掉无关的旧对话
+    messages[:] = micro_compact(runtime, messages)  # 旧工具结果占位
     if estimate_size(messages) > runtime.settings.context_limit:
         messages[:] = compact_history(runtime, messages)
     return messages

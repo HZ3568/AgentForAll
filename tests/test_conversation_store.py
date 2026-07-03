@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+from codeagent.sessions.renderers import messages_to_display
 from codeagent.sessions.store import ConversationStore, normalize_history
-from web.renderers import messages_to_display
 
 
 def test_conversation_store_create_list_load_save_delete(tmp_path):

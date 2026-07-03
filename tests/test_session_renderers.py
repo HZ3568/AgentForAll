@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from web.renderers import export_display_messages, messages_to_display
+from codeagent.sessions.renderers import export_display_messages, messages_to_display
 
 
 def test_messages_to_display_handles_tool_blocks():
@@ -45,5 +45,5 @@ def test_export_display_messages_returns_json_and_markdown():
     json_data, markdown_data = export_display_messages(display)
 
     assert '"hello"' in json_data
-    assert "# CodeAgent-Harness Chat" in markdown_data
+    assert "# AgentForAll Chat" in markdown_data
     assert "hello" in markdown_data

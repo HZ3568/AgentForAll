@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import streamlit as st
-
 
 def _get(block: Any, key: str, default: Any = None) -> Any:
     if isinstance(block, dict):
@@ -69,55 +67,17 @@ def messages_to_display(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     display_messages = []
     for message in messages:
         display_message = message_to_display(message)
-        if any(block.get("text") or block.get("content") or block.get("name") for block in display_message["content"]):
+        if any(
+            block.get("text") or block.get("content") or block.get("name")
+            for block in display_message["content"]
+        ):
             display_messages.append(display_message)
     return display_messages
 
 
-def render_content_blocks(blocks: list[dict[str, Any]]) -> None:
-    for block in blocks:
-        block_type = block.get("type")
-        if block_type == "text":
-            text = str(block.get("text", "")).strip()
-            if text:
-                st.markdown(text)
-        elif block_type == "tool_use":
-            label = f"Tool call: {block.get('name', 'unknown')}"
-            with st.expander(label, expanded=False):
-                if block.get("id"):
-                    st.caption(f"id: `{block['id']}`")
-                st.json(block.get("input", {}))
-        elif block_type == "tool_result":
-            tool_id = block.get("tool_use_id") or "unknown"
-            with st.expander(f"Tool result: {tool_id}", expanded=False):
-                st.code(str(block.get("content", ""))[:20000])
-
-
-def render_chat_message(message: dict[str, Any]) -> None:
-    role = message.get("role", "assistant")
-    if role not in {"user", "assistant"}:
-        role = "assistant"
-    with st.chat_message(role):
-        render_content_blocks(message.get("content", []))
-
-
-def render_runtime_panel(runtime: Any, context: dict[str, Any]) -> None:
-    with st.expander("Session Details", expanded=True):
-        st.markdown(f"**Model**  \n`{runtime.settings.primary_model}`")
-        st.markdown(f"**Workdir**  \n`{runtime.settings.workdir}`")
-
-        teammates = context.get("active_teammates") or list(runtime.active_teammates.keys())
-        mcp_names = context.get("connected_mcp") or runtime.mcp.connected_names()
-        memory_count = len(runtime.memory.list_memory_files())
-
-        st.markdown(f"**Active teammates**  \n{', '.join(teammates) if teammates else '(none)'}")
-        st.markdown(f"**Connected MCP**  \n{', '.join(mcp_names) if mcp_names else '(none)'}")
-        st.markdown(f"**Memory files**  \n`{memory_count}`")
-
-
 def export_display_messages(display_messages: list[dict[str, Any]]) -> tuple[str, str]:
     json_data = json.dumps(display_messages, ensure_ascii=False, indent=2)
-    markdown_lines: list[str] = ["# CodeAgent-Harness Chat", ""]
+    markdown_lines: list[str] = ["# AgentForAll Chat", ""]
     for message in display_messages:
         markdown_lines.append(f"## {message.get('role', 'assistant').title()}")
         for block in message.get("content", []):

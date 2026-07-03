@@ -17,6 +17,7 @@ from codeagent.tasks.background import BackgroundManager
 from codeagent.tasks.cron import CronScheduler
 from codeagent.tasks.store import TaskStore
 from codeagent.tasks.worktree import WorktreeManager
+from codeagent.tools.results import EvidenceItem
 
 
 @dataclass
@@ -38,6 +39,14 @@ class Runtime:
     rounds_since_todo: int = 0
     cli_active: bool = False
     agent_lock: threading.Lock = field(default_factory=threading.Lock)
+    mode: str = "default"
+    gaia_eval_mode: str = "off"
+    current_task_id: str | None = None
+    current_scratch_dir: str | None = None
+    allow_project_writes: bool = True
+    evidence: list[EvidenceItem] = field(default_factory=list)
+    tool_errors: list[dict] = field(default_factory=list)
+    tools_used: list[str] = field(default_factory=list)
 
     def update_context(self, context: dict | None = None, messages: list | None = None) -> dict:
         del context
@@ -49,7 +58,17 @@ class Runtime:
             ),
             "connected_mcp": self.mcp.connected_names(),
             "active_teammates": list(self.active_teammates.keys()),
+            "os_name": self.settings.os_name,
+            "shell_name": self.settings.shell_name,
+            "mode": self.mode,
+            "gaia_eval_mode": self.gaia_eval_mode,
+            "scratch_dir": self.current_scratch_dir,
         }
+
+    def reset_tool_tracking(self) -> None:
+        self.evidence.clear()
+        self.tool_errors.clear()
+        self.tools_used.clear()
 
     def start_services(self) -> None:
         self.cron.start()
@@ -74,6 +93,7 @@ def create_runtime(config_path: str | None = None) -> Runtime:
         bus=bus,
         protocols=ProtocolRegistry(bus),
         mcp=MCPRegistry(),
+        mode=settings.mode,
     )
     register_default_hooks(runtime)
     runtime.start_services()

@@ -14,6 +14,7 @@ from codeagent.core.context import (
 from codeagent.core.llm import RecoveryState, is_prompt_too_long_error, with_retry
 from codeagent.core.prompt import assemble_system_prompt
 from codeagent.tasks.background import call_tool_handler
+from codeagent.tools.results import ToolResult, format_tool_result, is_tool_failure
 from codeagent.tools.registry import build_tool_pool
 
 
@@ -22,6 +23,37 @@ def build_user_content(runtime: Any, results: list[dict]) -> list[dict]:
     for note in runtime.background.collect_results():
         content.append({"type": "text", "text": note})
     return content
+
+
+def record_tool_observation(runtime: Any, tool_name: str, output: Any) -> str:
+    if hasattr(runtime, "tools_used"):
+        runtime.tools_used.append(tool_name)
+
+    if isinstance(output, ToolResult):
+        if output.ok and tool_name != "todo_write":
+            runtime.evidence.extend(output.evidence)
+        elif not output.ok:
+            runtime.tool_errors.append(
+                {
+                    "tool": tool_name,
+                    "error_type": output.error_type or "tool_error",
+                    "message": output.content[:1000],
+                    "metadata": output.metadata,
+                }
+            )
+        return format_tool_result(output)
+
+    failed, error_type = is_tool_failure(str(output))
+    if failed:
+        runtime.tool_errors.append(
+            {
+                "tool": tool_name,
+                "error_type": error_type or "tool_error",
+                "message": str(output)[:1000],
+                "metadata": {},
+            }
+        )
+    return str(output)
 
 
 def inject_background_notifications(runtime: Any, messages: list) -> None:
@@ -156,11 +188,12 @@ def agent_loop(runtime: Any, messages: list, context: dict) -> None:
 
             blocked = runtime.hooks.trigger("PreToolUse", block)
             if blocked:
+                output_content = record_tool_observation(runtime, block.name, str(blocked))
                 results.append(
                     {
                         "type": "tool_result",
                         "tool_use_id": block.id,
-                        "content": str(blocked),
+                        "content": output_content,
                     }
                 )
                 continue
@@ -181,14 +214,15 @@ def agent_loop(runtime: Any, messages: list, context: dict) -> None:
                 handlers.get(block.name), block.input, block.name
             )
             runtime.hooks.trigger("PostToolUse", block, output)
-            print(str(output)[:300])
+            output_content = record_tool_observation(runtime, block.name, output)
+            print(output_content[:300])
 
             if block.name == "todo_write":
                 runtime.rounds_since_todo = 0
             else:
                 runtime.rounds_since_todo += 1
             results.append(
-                {"type": "tool_result", "tool_use_id": block.id, "content": output}
+                {"type": "tool_result", "tool_use_id": block.id, "content": output_content}
             )
 
         if compacted_now:

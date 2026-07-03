@@ -46,7 +46,7 @@ python -m venv .venv
 # Windows: .venv\Scripts\activate
 source .venv/bin/activate
 pip install -r requirements.txt
-cp config.example.yaml config.yaml
+# config.yaml is optional; .env is enough for normal use.
 ```
 
 创建 `.env`：

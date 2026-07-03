@@ -14,6 +14,9 @@ config.yaml
 .worktrees/
 .sessions/
 .transcripts/
+.codegraph/
+data/
+outputs/
 
 # Python bytecode and caches
 __pycache__/

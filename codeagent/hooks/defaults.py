@@ -6,6 +6,7 @@ from codeagent.tools.basic import safe_path
 
 DENY_LIST = ["rm -rf /", "sudo", "shutdown", "reboot", "mkfs", "dd if="]
 DESTRUCTIVE = ["rm ", "> /etc/", "chmod 777", "rmdir"]
+WINDOWS_LINUX_ONLY = ["xargs", "grep -R", "find . -type f", "sed -i", "awk "]
 
 
 # PreToolUse: 权限检查
@@ -13,12 +14,27 @@ def make_permission_hook(runtime: Any):
     def permission_hook(block: Any) -> str | None:
         block_name = getattr(block, "name", None)
         block_input = getattr(block, "input", None) or {}
+        print("[permission-debug] hook called")
+        print(f"[permission-debug] block.name={block_name}")
         if block_name == "bash":
             command = block_input.get("command", "")
+            print(f"[permission-debug] command={command!r}")
             for pattern in DENY_LIST:
                 if pattern in command:
                     return f"Permission denied: '{pattern}' is on the deny list"
-            if any(token in command for token in DESTRUCTIVE):
+            if getattr(runtime.settings, "os_name", "").lower() == "windows":
+                hit = next(
+                    (token for token in WINDOWS_LINUX_ONLY if token.lower() in command.lower()),
+                    None,
+                )
+                if hit:
+                    return (
+                        f"Shell command blocked on Windows because it uses '{hit}'. "
+                        "Use list_dir, find_files, search_text, or a Python script instead."
+                    )
+            destructive_hits = [token for token in DESTRUCTIVE if token in command]
+            print(f"[permission-debug] destructive hits={destructive_hits!r}")
+            if destructive_hits:
                 print("\n\033[33m[permission] destructive command\033[0m")
                 print(f"  {command}")
                 choice = input("  Allow? [y/N] ").strip().lower()

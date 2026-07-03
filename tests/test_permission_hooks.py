@@ -44,3 +44,17 @@ def test_default_pretool_hook_registers_permission_before_log(tmp_path, monkeypa
     assert "[permission-debug] hook called" in output
     assert "[permission-debug] destructive hits=['rmdir']" in output
     assert "[HOOK] bash" not in output
+
+
+def test_windows_linux_only_command_is_blocked(tmp_path):
+    runtime = SimpleNamespace(settings=SimpleNamespace(workdir=tmp_path, os_name="Windows"))
+    block = SimpleNamespace(
+        name="bash",
+        input={"command": "find . -type f | xargs grep hello"},
+    )
+
+    result = make_permission_hook(runtime)(block)
+
+    assert result is not None
+    assert "blocked on Windows" in result
+    assert "find_files" in result

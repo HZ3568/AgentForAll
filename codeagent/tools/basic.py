@@ -4,6 +4,19 @@ import glob as globlib
 import subprocess
 from pathlib import Path
 
+BINARY_TOOL_HINTS = {
+    ".xlsx": "Use read_spreadsheet for Excel files.",
+    ".xls": "Use read_spreadsheet for Excel files.",
+    ".pdf": "Use extract_pdf_text or extract_pdf_tables for PDF files.",
+    ".mp3": "Use transcribe_audio for audio files.",
+    ".wav": "Use transcribe_audio for audio files.",
+    ".m4a": "Use transcribe_audio for audio files.",
+    ".png": "Use ocr_image for image files.",
+    ".jpg": "Use ocr_image for image files.",
+    ".jpeg": "Use ocr_image for image files.",
+    ".webp": "Use ocr_image for image files.",
+}
+
 
 def safe_path(path: str, base: Path) -> Path:
     root = base.resolve()
@@ -79,7 +92,23 @@ def run_bash(command: str, cwd: Path, run_in_background: bool = False) -> str:
 
 def run_read(path: str, cwd: Path, limit: int | None = None, offset: int = 0) -> str:
     try:
-        lines = safe_path(path, cwd).read_text(encoding="utf-8").splitlines()
+        fp = safe_path(path, cwd)
+        suffix = fp.suffix.lower()
+        if suffix in BINARY_TOOL_HINTS:
+            return f"Error: binary or structured file detected ({suffix}). {BINARY_TOOL_HINTS[suffix]}"
+
+        text = None
+        last_error: Exception | None = None
+        for encoding in ("utf-8", "gbk", "latin-1"):
+            try:
+                text = fp.read_text(encoding=encoding)
+                break
+            except UnicodeDecodeError as exc:
+                last_error = exc
+        if text is None:
+            return f"Error: could not decode text file: {last_error}"
+
+        lines = text.splitlines()
         offset = max(int(offset or 0), 0)
         limit = int(limit) if limit is not None else None
         sliced = lines[offset:]

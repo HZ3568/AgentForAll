@@ -5,8 +5,22 @@ from typing import Any, Callable
 from codeagent.agents.subagent import spawn_subagent
 from codeagent.agents.teammate import spawn_teammate_thread
 from codeagent.mcp.client import normalize_mcp_name
+from pathlib import Path
+
 from codeagent.tools.basic import run_bash, run_edit, run_glob, run_read, run_write
+from codeagent.tools.file_tools import (
+    extract_pdf_tables,
+    extract_pdf_text,
+    find_files,
+    list_dir,
+    ocr_image,
+    read_spreadsheet,
+    search_text,
+    transcribe_audio,
+)
 from codeagent.tools.todo import run_todo_write
+from codeagent.tools.web import run_fetch_url, run_pdf_extract
+from codeagent.tools.web_search import run_web_search
 
 BUILTIN_TOOLS: list[dict[str, Any]] = [
     {
@@ -58,11 +72,144 @@ BUILTIN_TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "glob",
-        "description": "Find files matching a glob pattern.",
+        "description": "Find files matching a glob pattern. Prefer find_files for recursive searches.",
         "input_schema": {
             "type": "object",
             "properties": {"pattern": {"type": "string"}},
             "required": ["pattern"],
+        },
+    },
+    {
+        "name": "web_search",
+        "description": "Search the public web through the configured API provider and return structured results.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "max_results": {"type": "integer"},
+                "timeout": {"type": "integer"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "fetch_url",
+        "description": "Fetch a web URL and extract readable text from HTML or plain text pages.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string"},
+                "max_chars": {"type": "integer"},
+                "timeout": {"type": "integer"},
+            },
+            "required": ["url"],
+        },
+    },
+    {
+        "name": "pdf_extract",
+        "description": "Extract text from a PDF file in the workspace or from a PDF URL.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string"},
+                "max_pages": {"type": "integer"},
+                "max_chars": {"type": "integer"},
+                "timeout": {"type": "integer"},
+            },
+            "required": ["source"],
+        },
+    },
+    {
+        "name": "list_dir",
+        "description": "List files and directories using Python, safe on Windows.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "limit": {"type": "integer"}},
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "find_files",
+        "description": "Recursively find files by glob pattern using Python. Prefer this over shell find/xargs.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "root": {"type": "string"},
+                "pattern": {"type": "string"},
+                "limit": {"type": "integer"},
+            },
+            "required": ["root", "pattern"],
+        },
+    },
+    {
+        "name": "search_text",
+        "description": "Search text files recursively using Python. Prefer this over grep/find/xargs.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "root": {"type": "string"},
+                "query": {"type": "string"},
+                "include_globs": {"type": "array", "items": {"type": "string"}},
+                "limit": {"type": "integer"},
+            },
+            "required": ["root", "query"],
+        },
+    },
+    {
+        "name": "read_spreadsheet",
+        "description": "Read CSV/XLS/XLSX files and return sheets, dimensions, columns, and preview rows.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "sheet_name": {"type": "string"},
+                "max_rows": {"type": "integer"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "extract_pdf_text",
+        "description": "Extract readable text from a PDF file in the workspace.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "max_pages": {"type": "integer"},
+                "max_chars": {"type": "integer"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "extract_pdf_tables",
+        "description": "Extract tables from a PDF file using pdfplumber.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "max_pages": {"type": "integer"},
+                "max_chars": {"type": "integer"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "transcribe_audio",
+        "description": "Transcribe an audio file using optional faster-whisper dependency.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "ocr_image",
+        "description": "Run OCR on an image using optional pytesseract dependency.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
         },
     },
     {
@@ -298,11 +445,38 @@ def build_builtin_handlers(runtime: Any) -> dict[str, Callable[..., str]]:
         "read_file": lambda path, limit=None, offset=0: run_read(
             path, cwd, limit, offset
         ),
-        "write_file": lambda path, content: run_write(path, content, cwd),
+        "write_file": lambda path, content: _write_file(runtime, path, content),
         "edit_file": lambda path, old_text, new_text: run_edit(
             path, old_text, new_text, cwd
         ),
         "glob": lambda pattern: run_glob(pattern, cwd),
+        "web_search": lambda query, max_results=None, timeout=None: run_web_search(
+            query, runtime.settings.web_search, max_results, timeout
+        ),
+        "fetch_url": lambda url, max_chars=20000, timeout=20: run_fetch_url(
+            url, max_chars, timeout
+        ),
+        "pdf_extract": lambda source, max_pages=20, max_chars=50000, timeout=20: run_pdf_extract(
+            source, cwd, max_pages, max_chars, timeout
+        ),
+        "list_dir": lambda path=".", limit=200: list_dir(path, cwd, limit),
+        "find_files": lambda root=".", pattern="*", limit=500: find_files(
+            root, pattern, cwd, limit
+        ),
+        "search_text": lambda root=".", query="", include_globs=None, limit=100: search_text(
+            root, query, cwd, include_globs, limit
+        ),
+        "read_spreadsheet": lambda path, sheet_name=None, max_rows=20: read_spreadsheet(
+            path, cwd, sheet_name, max_rows
+        ),
+        "extract_pdf_text": lambda path, max_pages=20, max_chars=50000: extract_pdf_text(
+            path, cwd, max_pages, max_chars
+        ),
+        "extract_pdf_tables": lambda path, max_pages=20, max_chars=50000: extract_pdf_tables(
+            path, cwd, max_pages, max_chars
+        ),
+        "transcribe_audio": lambda path: transcribe_audio(path, cwd),
+        "ocr_image": lambda path: ocr_image(path, cwd),
         "todo_write": lambda todos: run_todo_write(runtime, todos),
         "task": lambda description: spawn_subagent(runtime, description),
         "load_skill": lambda name: runtime.skills.load(name),
@@ -344,6 +518,28 @@ def build_builtin_handlers(runtime: Any) -> dict[str, Callable[..., str]]:
         "keep_worktree": lambda name: runtime.worktrees.keep(name),
         "connect_mcp": lambda name: runtime.mcp.connect(name),
     }
+
+
+def _write_file(runtime: Any, path: str, content: str) -> str:
+    if getattr(runtime, "mode", "default") == "gaia_eval" and not getattr(
+        runtime, "allow_project_writes", True
+    ):
+        scratch = getattr(runtime, "current_scratch_dir", None)
+        if not scratch:
+            return "Error: GAIA scratch directory is not configured."
+        scratch_dir = Path(scratch).resolve()
+        requested = Path(path)
+        if requested.is_absolute():
+            try:
+                requested.resolve().relative_to(scratch_dir)
+            except ValueError:
+                return (
+                    "Error: GAIA mode blocks writing outside the sample scratch directory. "
+                    f"Use scratch path: {scratch_dir}"
+                )
+            return run_write(str(requested.relative_to(scratch_dir)), content, scratch_dir)
+        return run_write(path, content, scratch_dir)
+    return run_write(path, content, runtime.settings.workdir)
 
 
 def _create_task(

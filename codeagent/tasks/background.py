@@ -3,12 +3,14 @@ from __future__ import annotations
 import threading
 from typing import Any, Callable
 
+from codeagent.tools.results import format_tool_result
 
-def call_tool_handler(handler: Callable[..., Any] | None, args: dict, name: str) -> str:
+
+def call_tool_handler(handler: Callable[..., Any] | None, args: dict, name: str) -> Any:
     if not handler:
         return f"Unknown: {name}"
     try:
-        return str(handler(**(args or {})))
+        return handler(**(args or {}))
     except TypeError as exc:
         return f"Error: {exc}"
 
@@ -40,10 +42,11 @@ class BackgroundManager:
         def worker() -> None:
             handler = handlers.get(block.name)
             result = call_tool_handler(handler, block.input, block.name)
-            post_hook(block, result)
+            formatted = format_tool_result(result)
+            post_hook(block, formatted)
             with self.lock:
                 self.tasks[bg_id]["status"] = "completed"
-                self.results[bg_id] = result
+                self.results[bg_id] = formatted
 
         with self.lock:
             self.tasks[bg_id] = {"tool_use_id": block.id, "command": command, "status": "running"}

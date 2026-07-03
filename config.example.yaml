@@ -14,7 +14,15 @@ limits:
 
 runtime:
   prompt: "\033[36magent >> \033[0m"
+  mode: default
   max_retries: 3
   max_consecutive_529: 2
   max_recovery_retries: 2
   base_delay_ms: 500
+
+web_search:
+  # Provider options: brave, tavily, serpapi, bing, duckduckgo, disabled.
+  # DuckDuckGo is not recommended and is only kept as an explicit fallback.
+  provider: disabled
+  timeout_seconds: 20
+  max_results: 5

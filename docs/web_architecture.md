@@ -12,7 +12,8 @@ React + Vite + TypeScript 用户交互层。
 
 - 只通过 `backend` API 与系统通信。
 - 不直接 import 或调用 `codeagent`。
-- 阶段 3 调用非流式 Agent turn API，展示用户消息、assistant 回复、运行状态和工具调用摘要。
+- 阶段 4 使用 fetch + ReadableStream 订阅 SSE，携带 Authorization header。
+- 不把 JWT 放进 URL query。
 
 ## backend
 
@@ -22,6 +23,7 @@ FastAPI Web 服务层。
 - 通过 service/runtime adapter 调用 `codeagent`。
 - API router 不直接 import `codeagent`。
 - Repository 查询用户私有数据时必须显式绑定 `user_id`。
+- MySQL 是 run state 和 run events 的权威数据源；SSE 只是实时传输通道。
 
 ## codeagent
 
@@ -29,7 +31,7 @@ Agent 核心能力层。
 
 - 负责 Runtime、Agent Loop、工具池、Memory、Tasks、MCP、CLI。
 - 不依赖 `backend` 或 `frontend`。
-- 不引入 FastAPI、SQLAlchemy、JWT、MySQL、React 等 Web 层概念。
+- 不引入 FastAPI、SQLAlchemy、JWT、MySQL、SSE、React 等 Web 层概念。
 - CLI 继续使用本地 `.sessions/.memory/.tasks` 文件机制。
 
 ## 阶段进展
@@ -37,17 +39,18 @@ Agent 核心能力层。
 - 阶段 0：移除旧 Streamlit Web，建立 FastAPI 最小骨架。
 - 阶段 1：建立 MySQL、SQLAlchemy、Alembic、ORM 和 Repository 地基。
 - 阶段 2：实现 Auth、Conversation、Message API 和最小 React 前端。
-- 阶段 3：通过 `AgentRuntimeAdapter` 接入非流式 Agent turn，持久化 run、event、tool call、tool result 和 assistant message。
+- 阶段 3：接入非流式 Agent turn，持久化 run、event、tool call、tool result 和 assistant message。
+- 阶段 4：新增异步 run、SSE run events、run 状态查询、cancel run 和前端实时 Agent 工作台。
 
-## Runtime Adapter 边界
+## Runtime 边界
 
-`backend/app/runtime/agent_adapter.py` 是 backend 中唯一直接 import `codeagent` 的位置。它负责把数据库消息转换为 codeagent history，调用 `agent_loop`，再把新增消息、工具调用和事件转换回 backend 内部类型。
+`backend/app/runtime/agent_adapter.py` 负责把数据库消息转换为 codeagent history，调用 `agent_loop`，再把新增消息、工具调用和事件转换回 backend 内部类型。
 
-`backend/app/services/agent_service.py` 负责数据库事务和权限边界。它不重写 Agent Loop，也不把 MySQL 写入 `codeagent`。
+`backend/app/services/agent_service.py` 负责数据库事务、用户隔离和 run 生命周期。
+
+`backend/app/services/event_stream_service.py` 只读取 `run_events` 并输出 SSE，不调用 Agent Runtime。
 
 ## Workspace 隔离
-
-阶段 3 为每个用户会话创建独立目录：
 
 ```text
 .runtime_workspaces/

@@ -75,6 +75,14 @@ class MessageRepository:
         )
         return list(self.db.scalars(stmt))
 
+    def get_for_user(self, message_id: str, user_id: str) -> Message | None:
+        return self.db.scalar(
+            select(Message).where(
+                Message.id == message_id,
+                Message.user_id == user_id,
+            )
+        )
+
     def create_user_message(
         self,
         user_id: str,

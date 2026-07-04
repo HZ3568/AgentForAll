@@ -1,7 +1,7 @@
-import type { AgentRunStatus } from '../types/agent';
+import type { RunStatus } from '../types/run';
 
 interface RunStatusBadgeProps {
-  status: AgentRunStatus | null;
+  status: RunStatus | null;
 }
 
 export function RunStatusBadge({ status }: RunStatusBadgeProps) {
@@ -11,4 +11,3 @@ export function RunStatusBadge({ status }: RunStatusBadgeProps) {
 
   return <span className={`run-status ${status}`}>{status}</span>;
 }
-

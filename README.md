@@ -11,17 +11,17 @@ frontend -> backend -> codeagent
 ## 架构
 
 - `frontend`：React + Vite + TypeScript 交互层，只调用 backend API。
-- `backend`：FastAPI 服务层，负责认证、权限校验、MySQL 持久化、会话隔离和 Runtime 适配。
+- `backend`：FastAPI 服务层，负责认证、权限校验、MySQL 持久化、会话隔离、SSE 事件流和 Runtime 适配。
 - `codeagent`：Agent 核心能力层，负责 Runtime、Agent Loop、工具池、Memory、Tasks、MCP 和 CLI。
 
-`codeagent` 不依赖 Web 层，不引入 FastAPI、SQLAlchemy、JWT、MySQL 或 React。CLI 继续直接使用 `codeagent` 自身能力。
+`codeagent` 不依赖 Web 层，不引入 FastAPI、SQLAlchemy、JWT、MySQL、SSE 或 React。CLI 继续直接使用 `codeagent` 自身能力。
 
 ## 技术栈
 
 | Layer | Stack |
 |---|---|
 | Frontend | React, Vite, TypeScript |
-| Backend | FastAPI, SQLAlchemy, Alembic, PyMySQL, JWT |
+| Backend | FastAPI, SQLAlchemy, Alembic, PyMySQL, JWT, SSE |
 | Agent Core | Python, Anthropic Messages API, Tool Calling |
 | Memory & Trace | Markdown, JSON, JSONL |
 | Evaluation | GAIA Benchmark, pytest |
@@ -32,8 +32,9 @@ frontend -> backend -> codeagent
 - 阶段 1：建立 MySQL、SQLAlchemy、Alembic、ORM 和 Repository 层。
 - 阶段 2：实现注册、登录、Conversation / Message API 和最小 React 前端。
 - 阶段 3：接入非流式 Agent turn API，持久化 assistant message、agent run、run event、tool call 和 tool result。
+- 阶段 4：新增异步 run、SSE run events、run 状态查询、cancel run 和前端实时 Agent 工作台。
 
-阶段 3 暂不实现 SSE、WebSocket、run cancel、工具审批和 Memory 同步。
+阶段 4 暂不实现 WebSocket、复杂工具审批、文件上传、Memory 同步和多进程分布式队列。
 
 ## 目录
 
@@ -120,8 +121,13 @@ npm run build
 - `POST /api/v1/conversations`
 - `GET /api/v1/conversations/{conversation_id}/messages`
 - `POST /api/v1/agent/conversations/{conversation_id}/turn`
+- `POST /api/v1/agent/conversations/{conversation_id}/runs`
+- `GET /api/v1/agent/runs/{run_id}`
+- `GET /api/v1/agent/runs/{run_id}/events`
+- `GET /api/v1/agent/runs/{run_id}/events/stream`
+- `POST /api/v1/agent/runs/{run_id}/cancel`
 
-Agent turn 是阶段 3 的正式对话入口。它会创建 user message，调用 `codeagent` Runtime，并持久化 assistant message、run events 和工具调用记录。
+`/turn` 保留同步非流式能力。`/runs` 是阶段 4 的实时工作台入口：它快速返回 `run_id`，后台执行 Agent，前端通过 SSE 订阅 `run_events`。
 
 ## GAIA 评估
 
@@ -142,3 +148,4 @@ python -m codeagent.evaluation.gaia.run_eval --level 1 --max-samples 5 --gaia-ev
 - [Backend API](docs/backend_api.md)
 - [Backend Database](docs/backend_database.md)
 - [Agent Runtime Adapter](docs/agent_runtime_adapter.md)
+- [Streaming Events](docs/streaming_events.md)

@@ -1,49 +1,40 @@
 # Agent Runtime Adapter
 
-阶段 3 使用 `AgentRuntimeAdapter` 把 FastAPI 后端和 `codeagent` Runtime 解耦。
+`AgentRuntimeAdapter` 是 backend 与 `codeagent` Runtime 的边界。它允许 Web 层复用 `codeagent` 的 Agent Loop，同时不把 HTTP、SSE、数据库、JWT 或用户隔离逻辑写进 `codeagent`。
 
 ## 边界
 
 - `codeagent` 不 import `backend`。
-- `codeagent` 不知道 FastAPI、MySQL、SQLAlchemy、JWT 或 React。
+- `codeagent` 不知道 FastAPI、MySQL、SQLAlchemy、JWT、SSE 或 React。
 - API router 不直接调用 `codeagent`。
-- backend 中只有 runtime adapter 直接 import `codeagent`。
-- service 层负责事务、权限和持久化。
+- backend 中只有 runtime/service 边界可以触达 Agent 执行能力。
+- `backend/app/runtime/agent_adapter.py` 是直接 import `codeagent` 的位置。
 
-## 为什么需要 Adapter
+## Adapter 职责
 
-`codeagent.core.loop.agent_loop(runtime, messages, context)` 是 CLI 已使用的核心循环。它会原地修改 `messages`，追加 assistant 消息和工具结果消息。Web 层需要复用这个能力，但不能把 HTTP、数据库或用户隔离逻辑塞进 Agent Loop。
+`codeagent.core.loop.agent_loop(runtime, messages, context)` 会原地修改 `messages`。Adapter 负责：
 
-`AgentRuntimeAdapter` 的职责是：
-
-1. 将 MySQL 中的 messages 转换为 codeagent history。
+1. 将 MySQL messages 转换为 codeagent history。
 2. 创建 codeagent runtime。
 3. 调用 `agent_loop`。
-4. 对比调用前后的 history，提取新增 assistant messages。
+4. 对比调用前后的 history，提取新增 assistant message。
 5. 提取 tool_use 和 tool_result。
-6. 返回 backend 内部的 `AgentTurnResult`。
+6. 返回 backend 内部 `AgentTurnResult`。
 
-## Agent Turn 生命周期
+Adapter 不直接操作数据库，不接收 FastAPI Request/Response，不做权限判断。
 
-`AgentService` 执行一次 turn：
+## Service 生命周期
 
-1. 校验 conversation 属于当前用户。
-2. 获取进程内 conversation lock。
-3. 写入 user message。
-4. 创建 agent run，标记 `running`。
-5. 写入 `run_started`。
-6. 调用 `AgentSessionManager` 和 `AgentRuntimeAdapter`。
-7. 写入 assistant message。
-8. 写入 adapter events。
-9. 写入 tool calls 和 tool results。
-10. 成功时写入 `run_finished` 并标记 `succeeded`。
-11. 失败时写入 `run_failed` 并标记 `failed`。
+阶段 4 中 `AgentService` 拆分为：
 
-失败时保留 user message 和 failed run，方便审计和前端展示。
+- `create_run()`：校验用户、写 user message、创建 queued run、写 `run_queued` 和 `user_message_created`。
+- `execute_run()`：获取 conversation lock、标记 `running`、调用 adapter、写 assistant message / events / tool calls / results。
+- `run_turn()`：兼容阶段 3，同步执行 `create_run()` + `execute_run()`。
+- `cancel_run()`：写入取消请求，进行 best-effort cooperative cancellation。
 
 ## Workspace
 
-`AgentSessionManager` 为每个用户会话准备：
+每个用户会话有独立目录：
 
 ```text
 .runtime_workspaces/
@@ -55,33 +46,23 @@
       traces/
 ```
 
-workspace 路径不返回给前端。阶段 3 先建立目录边界，后续需要加强工具层文件访问控制。
+workspace 路径不返回给前端。阶段 4 仍只建立目录边界；工具层更严格的文件访问限制留到后续阶段。
 
-## 并发
+## 并发与后台任务
 
-阶段 3 使用进程内 `threading.Lock`，按 `user_id + conversation_id` 防止同一会话并发运行。该方案适合单进程开发环境。生产多进程部署需要 Redis lock 或数据库锁。
+阶段 4 使用：
+
+- in-process `threading.Lock` 防止同一 conversation 并发运行。
+- FastAPI `BackgroundTasks` / in-process worker 执行异步 run。
+
+这适合开发和单进程部署。生产环境应替换为队列系统和分布式锁，例如 Redis lock、Celery、RQ、Dramatiq 或 Arq。
 
 ## 测试策略
 
 后端测试注入 fake adapter：
 
 - 不真实调用 LLM。
-- 不真实调用 shell 工具。
+- 不真实调用 bash/shell 工具。
 - 不依赖外部网络。
-- 验证 API、service、repository、持久化和用户隔离。
-
-## 阶段 3 限制
-
-- 非流式接口。
-- 暂不实现 SSE 或 WebSocket。
-- 暂不实现 cancel run。
-- 暂不实现 permission_required 工具审批。
-- 暂不实现 Memory 同步。
-
-## 阶段 4 计划
-
-- SSE 流式输出。
-- 实时工具调用事件。
-- run cancel。
-- permission_required 工具审批。
+- 验证 API、service、repository、事件持久化、SSE replay 和用户隔离。
 

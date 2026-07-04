@@ -122,8 +122,8 @@ class AgentRuntimeAdapter:
                     final_text = content_text
                 events.append(
                     AgentEventRecord(
-                        event_type="message_created",
-                        event_json={"role": "assistant", "text": content_text[:1000]},
+                        event_type="assistant_delta",
+                        event_json={"role": "assistant", "delta": content_text[:1000]},
                     )
                 )
                 tool_calls.extend(self._extract_tool_calls(content))
@@ -226,4 +226,3 @@ class AgentRuntimeAdapter:
         if "[error]" in lowered or "traceback" in lowered or "failed" in lowered:
             return "tool_error"
         return None
-

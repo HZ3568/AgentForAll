@@ -3,6 +3,7 @@ import type { Message } from './message';
 export type AgentRunStatus =
   | 'queued'
   | 'running'
+  | 'cancelling'
   | 'waiting_permission'
   | 'succeeded'
   | 'failed'
@@ -35,4 +36,3 @@ export interface AgentTurnResponse {
   tool_calls: AgentToolCall[];
   error: string | null;
 }
-

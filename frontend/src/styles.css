@@ -90,6 +90,10 @@ button:disabled {
   color: #1f6feb;
 }
 
+.danger {
+  color: #a8071a;
+}
+
 .link-button {
   margin-top: 12px;
   padding-left: 0;
@@ -168,6 +172,12 @@ button:disabled {
   justify-content: space-between;
 }
 
+.run-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
 .run-status,
 .tool-call {
   border-radius: 999px;
@@ -190,6 +200,12 @@ button:disabled {
   color: #a8071a;
 }
 
+.run-status.cancelled,
+.run-status.cancelling {
+  background: #fff7e6;
+  color: #ad6800;
+}
+
 .run-status.succeeded,
 .tool-call.succeeded {
   background: #ecfdf3;
@@ -206,6 +222,22 @@ button:disabled {
 .tool-call {
   background: #f2f4f7;
   color: #344054;
+}
+
+.run-events {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.run-event {
+  background: #f8fafc;
+  border: 1px solid #dde2ea;
+  border-radius: 999px;
+  color: #475467;
+  font-size: 12px;
+  padding: 5px 8px;
 }
 
 .message-list {
@@ -226,6 +258,15 @@ button:disabled {
 .message.user {
   background: #f9fbff;
   justify-self: end;
+}
+
+.message.assistant {
+  background: #ffffff;
+  justify-self: start;
+}
+
+.message.streaming {
+  border-color: #1f6feb;
 }
 
 .message-role {

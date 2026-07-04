@@ -38,7 +38,7 @@ def test_runtime_adapter_collects_assistant_message(tmp_path):
     assert result.error is None
     assert result.final_text == "hello"
     assert result.assistant_messages[0]["content_text"] == "hello"
-    assert result.events[0].event_type == "message_created"
+    assert result.events[0].event_type == "assistant_delta"
 
 
 def test_runtime_adapter_collects_tool_calls_and_results(tmp_path):
@@ -89,4 +89,3 @@ def test_runtime_adapter_collects_tool_calls_and_results(tmp_path):
     assert result.tool_results[0].tool_call_external_id == "tool-1"
     assert result.tool_results[0].output_text == "README content"
     assert result.final_text == "done"
-

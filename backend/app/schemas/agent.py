@@ -20,6 +20,10 @@ class AgentTurnRequest(BaseModel):
         return content
 
 
+class AgentRunCreateRequest(AgentTurnRequest):
+    pass
+
+
 class AgentRunRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -32,7 +36,7 @@ class AgentRunRead(BaseModel):
     created_at: datetime
 
 
-class AgentEventRead(BaseModel):
+class AgentRunEventRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
@@ -40,6 +44,9 @@ class AgentEventRead(BaseModel):
     event_json: dict[str, Any] | list[Any] | None
     sequence_no: int
     created_at: datetime
+
+
+AgentEventRead = AgentRunEventRead
 
 
 class AgentToolCallRead(BaseModel):
@@ -63,3 +70,20 @@ class AgentTurnResponse(BaseModel):
     tool_calls: list[AgentToolCallRead]
     error: str | None = None
 
+
+class AgentRunCreateResponse(BaseModel):
+    run_id: str
+    conversation_id: str
+    status: str
+    user_message: MessageRead
+    events_url: str
+
+
+class AgentRunEventsResponse(BaseModel):
+    run_id: str
+    events: list[AgentRunEventRead]
+
+
+class AgentRunCancelResponse(BaseModel):
+    run_id: str
+    status: str

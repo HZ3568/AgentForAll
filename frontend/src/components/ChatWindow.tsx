@@ -1,27 +1,46 @@
 import { FormEvent, useState } from 'react';
-import type { AgentRunStatus, AgentToolCall } from '../types/agent';
 import type { Conversation } from '../types/conversation';
 import type { Message } from '../types/message';
+import type { RunEvent, RunStatus, ToolCallState } from '../types/run';
+import { CancelRunButton } from './CancelRunButton';
 import { MessageBubble } from './MessageBubble';
+import { RunEventTimeline } from './RunEventTimeline';
 import { RunStatusBadge } from './RunStatusBadge';
-import { ToolCallSummary } from './ToolCallSummary';
+import { StreamingMessage } from './StreamingMessage';
+import { ToolCallTimeline } from './ToolCallTimeline';
 
 interface ChatWindowProps {
+  activeRunId: string | null;
   conversation: Conversation | null;
   messages: Message[];
+  onCancelRun: () => Promise<void>;
   onSend: (content: string) => Promise<void>;
-  runStatus: AgentRunStatus | null;
-  toolCalls: AgentToolCall[];
+  runEvents: RunEvent[];
+  runIsActive: boolean;
+  runStatus: RunStatus | null;
+  streamingText: string;
+  toolCalls: ToolCallState[];
 }
 
-export function ChatWindow({ conversation, messages, onSend, runStatus, toolCalls }: ChatWindowProps) {
+export function ChatWindow({
+  activeRunId,
+  conversation,
+  messages,
+  onCancelRun,
+  onSend,
+  runEvents,
+  runIsActive,
+  runStatus,
+  streamingText,
+  toolCalls,
+}: ChatWindowProps) {
   const [content, setContent] = useState('');
   const [sending, setSending] = useState(false);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     const text = content.trim();
-    if (!text || sending) {
+    if (!text || sending || runIsActive) {
       return;
     }
     setSending(true);
@@ -38,25 +57,31 @@ export function ChatWindow({ conversation, messages, onSend, runStatus, toolCall
       <header className="chat-header">
         <div className="chat-title-row">
           <h1>{conversation?.title ?? 'New Chat'}</h1>
-          <RunStatusBadge status={sending ? 'running' : runStatus} />
+          <div className="run-actions">
+            <RunStatusBadge status={sending ? 'queued' : runStatus} />
+            <CancelRunButton runId={activeRunId} status={runStatus} onCancel={onCancelRun} />
+          </div>
         </div>
-        <p>Non-streaming runtime is connected. Live events arrive in the next phase.</p>
-        <ToolCallSummary toolCalls={toolCalls} />
+        <p>Live run events stream from backend SSE and are replayed from MySQL.</p>
+        <ToolCallTimeline toolCalls={toolCalls} />
+        <RunEventTimeline events={runEvents} />
       </header>
       <div className="message-list">
         {messages.map((message) => (
           <MessageBubble key={message.id} message={message} />
         ))}
-        {messages.length === 0 && <p className="muted">Send a message to start the conversation.</p>}
+        <StreamingMessage text={streamingText} />
+        {messages.length === 0 && !streamingText && <p className="muted">Send a message to start the conversation.</p>}
       </div>
       <form className="composer" onSubmit={handleSubmit}>
         <input
+          disabled={runIsActive}
           value={content}
           onChange={(event) => setContent(event.target.value)}
-          placeholder="Ask the agent..."
+          placeholder={runIsActive ? 'Agent is running...' : 'Ask the agent...'}
         />
-        <button disabled={sending || !content.trim()} type="submit">
-          {sending ? 'Running' : 'Send'}
+        <button disabled={sending || runIsActive || !content.trim()} type="submit">
+          {sending || runIsActive ? 'Running' : 'Send'}
         </button>
       </form>
     </div>

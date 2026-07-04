@@ -7,6 +7,9 @@ from backend.app.models.agent_run import AgentRun
 from backend.app.models.base import utc_now
 
 
+ACTIVE_RUN_STATUSES = {"queued", "running", "cancelling"}
+
+
 class AgentRunRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -37,6 +40,25 @@ class AgentRunRepository:
         self.db.flush()
         return run
 
+    def mark_cancelling(self, run_id: str, user_id: str) -> AgentRun | None:
+        run = self.get_for_user(run_id, user_id)
+        if run is None:
+            return None
+        if run.status in {"succeeded", "failed", "cancelled"}:
+            return run
+        run.status = "cancelling"
+        self.db.flush()
+        return run
+
+    def mark_cancelled(self, run_id: str, user_id: str) -> AgentRun | None:
+        run = self.get_for_user(run_id, user_id)
+        if run is None:
+            return None
+        run.status = "cancelled"
+        run.finished_at = utc_now()
+        self.db.flush()
+        return run
+
     def mark_succeeded(self, run_id: str, user_id: str) -> AgentRun | None:
         run = self.get_for_user(run_id, user_id)
         if run is None:
@@ -64,3 +86,14 @@ class AgentRunRepository:
             )
         )
 
+    def list_active_for_conversation(self, user_id: str, conversation_id: str) -> list[AgentRun]:
+        stmt = (
+            select(AgentRun)
+            .where(
+                AgentRun.user_id == user_id,
+                AgentRun.conversation_id == conversation_id,
+                AgentRun.status.in_(ACTIVE_RUN_STATUSES),
+            )
+            .order_by(AgentRun.created_at.asc())
+        )
+        return list(self.db.scalars(stmt))

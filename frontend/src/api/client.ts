@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
 export class ApiError extends Error {
   status: number;
@@ -17,6 +17,10 @@ export function setToken(token: string): void {
   localStorage.setItem('access_token', token);
 }
 
+export function apiUrl(path: string): string {
+  return `${API_BASE_URL}${path}`;
+}
+
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (!headers.has('Content-Type') && options.body) {
@@ -28,7 +32,7 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(apiUrl(path), {
     ...options,
     headers,
   });

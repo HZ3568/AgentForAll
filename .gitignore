@@ -44,6 +44,7 @@ pip-wheel-metadata/
 
 # Frontend dependencies and compiler artifacts
 node_modules/
+/package-lock.json
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts

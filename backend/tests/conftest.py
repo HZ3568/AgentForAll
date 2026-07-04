@@ -3,10 +3,13 @@ from __future__ import annotations
 from collections.abc import Generator
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.core.database import get_db
+from backend.app.main import app
 from backend.app.models import Base
 
 
@@ -33,3 +36,14 @@ def db_session() -> Generator[Session, None, None]:
         session.close()
         Base.metadata.drop_all(engine)
         engine.dispose()
+
+
+@pytest.fixture()
+def app_client(db_session: Session) -> Generator[TestClient, None, None]:
+    def override_get_db() -> Generator[Session, None, None]:
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(app) as client:
+        yield client
+    app.dependency_overrides.clear()

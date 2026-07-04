@@ -20,7 +20,10 @@ class ConversationRepository:
     def list_for_user(self, user_id: str, limit: int = 50, offset: int = 0) -> list[Conversation]:
         stmt = (
             select(Conversation)
-            .where(Conversation.user_id == user_id)
+            .where(
+                Conversation.user_id == user_id,
+                Conversation.status != "deleted",
+            )
             .order_by(Conversation.updated_at.desc())
             .limit(limit)
             .offset(offset)
@@ -35,12 +38,31 @@ class ConversationRepository:
             )
         )
 
+    def get_active_for_user(self, conversation_id: str, user_id: str) -> Conversation | None:
+        return self.db.scalar(
+            select(Conversation).where(
+                Conversation.id == conversation_id,
+                Conversation.user_id == user_id,
+                Conversation.status != "deleted",
+            )
+        )
+
     def update_title_for_user(self, conversation_id: str, user_id: str, title: str) -> Conversation | None:
         conversation = self.get_for_user(conversation_id, user_id)
         if conversation is None:
             return None
         conversation.title = title
         conversation.updated_at = utc_now()
+        self.db.flush()
+        return conversation
+
+    def touch_conversation_for_user(self, conversation_id: str, user_id: str) -> Conversation | None:
+        conversation = self.get_active_for_user(conversation_id, user_id)
+        if conversation is None:
+            return None
+        now = utc_now()
+        conversation.updated_at = now
+        conversation.last_message_at = now
         self.db.flush()
         return conversation
 

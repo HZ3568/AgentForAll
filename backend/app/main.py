@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.api.v1.health import router as health_router
+from backend.app.api.v1.router import api_router
 from backend.app.core.config import get_settings
 
 
@@ -19,7 +19,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    app.include_router(health_router, prefix="/api/v1")
+    app.include_router(api_router)
     return app
 
 

@@ -8,6 +8,7 @@ The backend database layer is owned by `backend`. It uses MySQL in production, S
 - `codeagent` does not know about MySQL, SQLAlchemy, Alembic, JWT, or HTTP.
 - Repository code does not call the Agent Runtime.
 - A later adapter layer will translate backend conversation rows into `codeagent` history messages when the Agent API is introduced.
+- Phase 2 authentication and conversation/message APIs still stay inside `backend`; they do not import or call `codeagent`.
 
 ## Core Tables
 
@@ -30,6 +31,8 @@ Required patterns:
 - `MessageRepository.create_message(...)` must verify the conversation belongs to `user_id` before writing.
 
 Do not add repository methods that read private data by `conversation_id` alone.
+
+Phase 2 API routes map missing ownership to `404` so another user cannot infer whether an object exists.
 
 ## Migrations
 

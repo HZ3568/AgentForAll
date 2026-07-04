@@ -42,6 +42,12 @@ dist/
 *.egg-info/
 pip-wheel-metadata/
 
+# Frontend dependencies and compiler artifacts
+node_modules/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
 # Streamlit local settings
 .streamlit/secrets.toml
 

@@ -28,7 +28,7 @@ class MessageRepository:
         content_text: str,
         sequence_no: int | None = None,
     ) -> Message:
-        conversation = ConversationRepository(self.db).get_for_user(conversation_id, user_id)
+        conversation = ConversationRepository(self.db).get_active_for_user(conversation_id, user_id)
         if conversation is None:
             raise ConversationOwnershipError(
                 f"Conversation {conversation_id} does not belong to user {user_id}."
@@ -75,6 +75,20 @@ class MessageRepository:
         )
         return list(self.db.scalars(stmt))
 
+    def create_user_message(
+        self,
+        user_id: str,
+        conversation_id: str,
+        content: str,
+    ) -> Message:
+        return self.create_message(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            role="user",
+            content_json={"type": "text", "text": content},
+            content_text=content,
+        )
+
     def get_next_sequence_no(self, user_id: str, conversation_id: str) -> int:
         if not self._conversation_exists_for_user(user_id, conversation_id):
             raise ConversationOwnershipError(
@@ -94,6 +108,7 @@ class MessageRepository:
                 select(Conversation.id).where(
                     Conversation.id == conversation_id,
                     Conversation.user_id == user_id,
+                    Conversation.status != "deleted",
                 )
             )
             is not None

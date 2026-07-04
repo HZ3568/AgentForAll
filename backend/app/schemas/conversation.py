@@ -2,11 +2,31 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ConversationCreate(BaseModel):
-    title: str
+    title: str = Field(min_length=1, max_length=255)
+
+    @field_validator("title")
+    @classmethod
+    def strip_title(cls, value: str) -> str:
+        title = value.strip()
+        if not title:
+            raise ValueError("Title cannot be empty.")
+        return title
+
+
+class ConversationUpdate(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+
+    @field_validator("title")
+    @classmethod
+    def strip_title(cls, value: str) -> str:
+        title = value.strip()
+        if not title:
+            raise ValueError("Title cannot be empty.")
+        return title
 
 
 class ConversationRead(BaseModel):
@@ -19,3 +39,7 @@ class ConversationRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_message_at: datetime | None = None
+
+
+class ConversationListResponse(BaseModel):
+    items: list[ConversationRead]

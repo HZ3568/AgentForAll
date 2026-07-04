@@ -42,6 +42,15 @@ AgentForAll 将 Agent 主循环、工具调用、权限控制、Hook、Memory、
 - 新增用户隔离测试，确保用户 A 不能读取或写入用户 B 的会话消息。
 - 阶段 1 不调用 `codeagent` Runtime，不实现 Agent 对话接口。
 
+## 阶段 2
+
+当前阶段实现最小 Web 产品闭环：
+
+- 注册、登录、`/auth/me` 和 JWT Bearer 鉴权。
+- Conversation / Message API，所有查询绑定 `current_user.id`。
+- React + Vite + TypeScript 前端骨架，支持注册、登录、创建会话、查看消息和发送用户消息。
+- 阶段 2 不接入 Agent Runtime，不生成 assistant 回复，不实现 SSE/WebSocket。
+
 ## 架构图
 
 ```mermaid
@@ -91,6 +100,14 @@ python -m codeagent
 uvicorn backend.app.main:app --reload
 ```
 
+运行前端：
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
 运行数据库迁移：
 
 ```bash
@@ -136,3 +153,4 @@ AgentForAll
 
 更多 Web 架构边界见 [docs/web_architecture.md](docs/web_architecture.md)。
 数据库设计见 [docs/backend_database.md](docs/backend_database.md)。
+API 说明见 [docs/backend_api.md](docs/backend_api.md)。

@@ -47,3 +47,11 @@ Agent 核心能力层。
 - Repository 查询 conversation、message、tool、task、memory 时必须显式传入 `user_id` 并校验所有权。
 - Repository 层只处理数据库，不处理 HTTP，也不调用 Agent Runtime。
 - 详细说明见 [backend_database.md](backend_database.md)。
+
+## Phase 2 API Scope
+
+- `backend` 提供注册、登录、`/auth/me`、conversation 和 user message API。
+- 鉴权方式为 `Authorization: Bearer <token>`。
+- `frontend` 使用 React + Vite + TypeScript，只通过 `backend` API 访问系统。
+- 阶段 2 不接入 Agent Runtime，不生成 assistant 回复，不实现 SSE/WebSocket。
+- API 说明见 [backend_api.md](backend_api.md)。

@@ -32,7 +32,7 @@ frontend -> backend -> codeagent
 - 阶段 1：建立 MySQL、SQLAlchemy、Alembic、ORM 和 Repository 层。
 - 阶段 2：实现注册、登录、Conversation / Message API 和最小 React 前端。
 - 阶段 3：接入非流式 Agent turn API，持久化 assistant message、agent run、run event、tool call 和 tool result。
-- 阶段 4：新增异步 run、SSE run events、run 状态查询、cancel run 和前端实时 Agent 工作台。
+- 阶段 4：新增异步 run、真实 SSE delta 流、run 状态查询、cancel run 和前端实时 Agent 工作台。
 
 阶段 4 暂不实现 WebSocket、复杂工具审批、文件上传、Memory 同步和多进程分布式队列。
 

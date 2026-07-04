@@ -1,3 +1,5 @@
+import { MessageContent } from './MessageBubble';
+
 interface StreamingMessageProps {
   text: string;
 }
@@ -10,8 +12,7 @@ export function StreamingMessage({ text }: StreamingMessageProps) {
   return (
     <article className="message assistant streaming">
       <div className="message-role">assistant</div>
-      <p>{text}</p>
+      <MessageContent text={text} />
     </article>
   );
 }
-

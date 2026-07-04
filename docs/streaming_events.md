@@ -1,6 +1,6 @@
 # Streaming Events
 
-阶段 4 使用 SSE 实现 Agent run 的实时事件输出，不使用 WebSocket。
+阶段 4 使用 SSE 实现 Agent run 的实时事件输出，不使用 WebSocket。异步 `/runs` 使用 streaming runtime path：LLM 文本增量会以 `assistant_delta` 写入 MySQL，再由 SSE 立即回放给前端。
 
 ## 为什么使用 SSE
 
@@ -41,12 +41,15 @@ data: {"run_id":"...","sequence_no":4,"event_type":"assistant_delta","event_json
 
 `message` 相关事件包含 `message_id`、`role` 和 `content_text` 或 `delta`。`tool` 相关事件包含 `tool_call_id`、`tool_name` 和 `status`。`run_failed` 只包含可展示的简短错误，不包含 traceback、密钥或环境变量。
 
+`assistant_delta` 是真实生成过程中的文本 chunk，不是前端打字机模拟。最终 `assistant_message_created` 只在完整 assistant message 落库后写入一次。
+
 ## 持久化原则
 
 MySQL 是权威状态：
 
 - run 状态写入 `agent_runs`。
 - 事件写入 `run_events`。
+- `assistant_delta` 和工具事件在运行过程中提交，最终 assistant message 单独写入 `messages`。
 - SSE 从 `run_events` 读取事件并输出。
 - 断线重连只回放数据库已有事件，不重复写事件。
 

@@ -77,7 +77,7 @@ Authorization: Bearer <token>
 - conversation 必须属于当前用户。
 - content 不能为空。
 - API 快速返回，不等待 Agent 完整执行。
-- 后台 worker 执行 run，并持续写入 `run_events`。
+- 后台 worker 执行 run，并持续写入 `run_events`；`assistant_delta` 是后端 LLM streaming chunk，不是前端模拟。
 - 同一 conversation 已有 `queued/running/cancelling` run 时返回 `409`。
 
 ## Event Replay

@@ -14,7 +14,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -65,10 +66,17 @@ label {
   gap: 6px;
 }
 
-input {
+input,
+textarea {
   border: 1px solid #ccd3df;
   border-radius: 6px;
   padding: 10px 12px;
+}
+
+textarea {
+  min-height: 48px;
+  max-height: 180px;
+  resize: vertical;
 }
 
 button {
@@ -136,6 +144,12 @@ button:disabled {
   text-align: left;
 }
 
+.conversation span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .conversation.active {
   background: #eaf2ff;
   outline: 1px solid #1f6feb;
@@ -162,7 +176,7 @@ button:disabled {
 
 .chat-header {
   border-bottom: 1px solid #dde2ea;
-  padding: 18px 20px;
+  padding: 20px 24px;
 }
 
 .chat-title-row {
@@ -178,8 +192,7 @@ button:disabled {
   gap: 8px;
 }
 
-.run-status,
-.tool-call {
+.run-status {
   border-radius: 999px;
   display: inline-flex;
   font-size: 12px;
@@ -193,9 +206,7 @@ button:disabled {
   color: #175cd3;
 }
 
-.run-status.failed,
-.tool-call.failed,
-.tool-call.denied {
+.run-status.failed {
   background: #fff1f0;
   color: #a8071a;
 }
@@ -206,38 +217,121 @@ button:disabled {
   color: #ad6800;
 }
 
-.run-status.succeeded,
-.tool-call.succeeded {
+.run-status.succeeded {
   background: #ecfdf3;
   color: #027a48;
 }
 
-.tool-summary {
+.run-activity,
+.tool-timeline {
+  background: #fbfcfe;
+  border: 1px solid #e3e8f0;
+  border-radius: 8px;
+  justify-self: start;
+  max-width: 760px;
+  padding: 12px 14px;
+  width: min(760px, 100%);
+}
+
+.run-activity-header,
+.tool-timeline-title {
+  align-items: center;
+  color: #475467;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  text-transform: uppercase;
 }
 
-.tool-call {
-  background: #f2f4f7;
-  color: #344054;
+.run-activity-status {
+  color: #175cd3;
+  text-transform: none;
 }
 
-.run-events {
+.run-activity-status.failed {
+  color: #a8071a;
+}
+
+.run-activity-status.succeeded {
+  color: #027a48;
+}
+
+.run-events,
+.tool-timeline {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 10px;
+  margin: 0;
+  padding: 0;
 }
 
 .run-event {
-  background: #f8fafc;
-  border: 1px solid #dde2ea;
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e3e8f0;
   border-radius: 999px;
   color: #475467;
+  display: inline-flex;
   font-size: 12px;
-  padding: 5px 8px;
+  gap: 6px;
+  line-height: 1;
+  list-style: none;
+  padding: 7px 9px;
+}
+
+.run-event-dot {
+  background: #98a2b3;
+  border-radius: 999px;
+  height: 6px;
+  width: 6px;
+}
+
+.run-event.succeeded .run-event-dot {
+  background: #12b76a;
+}
+
+.run-event.failed .run-event-dot {
+  background: #d92d20;
+}
+
+.tool-timeline {
+  margin-top: -4px;
+}
+
+.tool-timeline-title {
+  flex-basis: 100%;
+  margin-bottom: 4px;
+}
+
+.tool-call {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e3e8f0;
+  border-radius: 999px;
+  color: #344054;
+  display: inline-flex;
+  font-size: 12px;
+  gap: 6px;
+  padding: 7px 9px;
+}
+
+.tool-call small {
+  color: #667085;
+}
+
+.tool-call.failed,
+.tool-call.denied {
+  background: #fff1f0;
+  border-color: #ffccc7;
+  color: #a8071a;
+}
+
+.tool-call.succeeded {
+  background: #ecfdf3;
+  border-color: #abefc6;
+  color: #027a48;
 }
 
 .message-list {
@@ -251,8 +345,9 @@ button:disabled {
 .message {
   border: 1px solid #dde2ea;
   border-radius: 8px;
-  max-width: 720px;
+  max-width: 760px;
   padding: 12px 14px;
+  width: fit-content;
 }
 
 .message.user {
@@ -266,7 +361,8 @@ button:disabled {
 }
 
 .message.streaming {
-  border-color: #1f6feb;
+  border-color: #8fb8ff;
+  box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.08);
 }
 
 .message-role {
@@ -276,9 +372,30 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.message p {
+.message-content {
+  display: grid;
+  gap: 10px;
+}
+
+.message-content p {
   margin: 0;
   white-space: pre-wrap;
+}
+
+.message-content pre {
+  background: #101828;
+  border-radius: 6px;
+  color: #f8fafc;
+  margin: 0;
+  max-width: min(720px, calc(100vw - 420px));
+  overflow: auto;
+  padding: 12px;
+}
+
+.message-content code {
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .composer {
@@ -287,6 +404,10 @@ button:disabled {
   gap: 10px;
   grid-template-columns: 1fr auto;
   padding: 16px;
+}
+
+.composer textarea {
+  line-height: 1.5;
 }
 
 @media (max-width: 760px) {
@@ -302,5 +423,9 @@ button:disabled {
 
   .chat-window {
     height: calc(100vh - 320px);
+  }
+
+  .message-content pre {
+    max-width: calc(100vw - 56px);
   }
 }

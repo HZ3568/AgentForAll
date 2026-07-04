@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from codeagent.core.streaming_loop import StreamingCallbacks, agent_loop_streaming
 from backend.app.runtime.types import (
     AgentEventRecord,
     AgentToolCallRecord,
@@ -68,6 +70,126 @@ class AgentRuntimeAdapter:
 
         new_messages = messages[turn_start:]
         return self._collect_result(new_messages)
+
+    def run_turn_streaming(
+        self,
+        *,
+        conversation_id: str,
+        user_id: str,
+        history: list[dict[str, Any]],
+        user_message: dict[str, Any],
+        workspace_path: str | None = None,
+        memory_path: str | None = None,
+        on_event: Callable[[AgentEventRecord], None] | None = None,
+        on_tool_call: Callable[[AgentToolCallRecord], None] | None = None,
+        on_tool_result: Callable[[AgentToolResultRecord], None] | None = None,
+    ) -> AgentTurnResult:
+        del conversation_id, user_id
+        messages = [self._to_codeagent_message(message) for message in history]
+        messages.append(self._to_codeagent_message(user_message))
+        turn_start = len(messages)
+        streamed_events: list[AgentEventRecord] = []
+        streamed_tool_calls: list[AgentToolCallRecord] = []
+        streamed_tool_results: list[AgentToolResultRecord] = []
+        delta_buffer: list[str] = []
+        last_flush = time.monotonic()
+
+        def emit_event(event: AgentEventRecord) -> None:
+            streamed_events.append(event)
+            if on_event:
+                on_event(event)
+
+        def flush_delta(force: bool = False) -> None:
+            nonlocal last_flush
+            if not delta_buffer:
+                return
+            text = "".join(delta_buffer)
+            elapsed = time.monotonic() - last_flush
+            if not force and len(text) < 120 and elapsed < 0.2 and "\n" not in text:
+                return
+            delta_buffer.clear()
+            last_flush = time.monotonic()
+            emit_event(
+                AgentEventRecord(
+                    event_type="assistant_delta",
+                    event_json={"role": "assistant", "delta": text},
+                )
+            )
+
+        def on_text_delta(delta: str) -> None:
+            delta_buffer.append(delta)
+            flush_delta()
+
+        def on_tool_call_started(block: Any) -> None:
+            flush_delta(force=True)
+            record = AgentToolCallRecord(
+                external_id=self._string_or_none(self._block_value(block, "id")),
+                tool_name=str(self._block_value(block, "name") or "unknown_tool"),
+                tool_input_json=self._jsonable_content(self._block_value(block, "input") or {}),
+                status="running",
+            )
+            if on_tool_call:
+                on_tool_call(record)
+
+        def on_tool_call_finished(block: Any, output_text: str, status: str) -> None:
+            record = AgentToolCallRecord(
+                external_id=self._string_or_none(self._block_value(block, "id")),
+                tool_name=str(self._block_value(block, "name") or "unknown_tool"),
+                tool_input_json=self._jsonable_content(self._block_value(block, "input") or {}),
+                status=status,
+            )
+            streamed_tool_calls.append(record)
+            if on_tool_call:
+                on_tool_call(record)
+            result_record = AgentToolResultRecord(
+                tool_call_external_id=record.external_id,
+                output_text=output_text,
+                output_json={"content": output_text},
+                error_type=self._tool_error_type_for_status(status, output_text),
+            )
+            streamed_tool_results.append(result_record)
+            if on_tool_result:
+                on_tool_result(result_record)
+
+        try:
+            runtime = self._create_runtime(workspace_path, memory_path)
+            runtime.reset_tool_tracking()
+            runtime.current_scratch_dir = (
+                str(Path(workspace_path) / "scratch") if workspace_path else None
+            )
+            context = runtime.update_context({}, messages)
+            agent_loop_streaming(
+                runtime,
+                messages,
+                context,
+                StreamingCallbacks(
+                    on_text_delta=on_text_delta,
+                    on_tool_call_started=on_tool_call_started,
+                    on_tool_call_finished=on_tool_call_finished,
+                ),
+            )
+            flush_delta(force=True)
+        except Exception as exc:
+            flush_delta(force=True)
+            return AgentTurnResult(
+                events=[
+                    *streamed_events,
+                    AgentEventRecord(
+                        event_type="run_failed",
+                        event_json={"error_type": type(exc).__name__, "message": str(exc)},
+                    ),
+                ],
+                tool_calls=streamed_tool_calls,
+                tool_results=streamed_tool_results,
+                error=f"{type(exc).__name__}: {exc}",
+            )
+
+        new_messages = messages[turn_start:]
+        result = self._collect_result(new_messages)
+        result.events = streamed_events
+        result.tool_calls = streamed_tool_calls
+        result.tool_results = streamed_tool_results
+        return result
 
     def _create_runtime(self, workspace_path: str | None, memory_path: str | None = None) -> Any:
         if workspace_path is None:
@@ -235,4 +357,11 @@ class AgentRuntimeAdapter:
         lowered = output_text.lower()
         if "[error]" in lowered or "traceback" in lowered or "failed" in lowered:
             return "tool_error"
+        return None
+
+    def _tool_error_type_for_status(self, status: str, output_text: str) -> str | None:
+        if status == "denied":
+            return "permission_denied"
+        if status == "failed":
+            return self._detect_error_type(output_text) or "tool_error"
         return None

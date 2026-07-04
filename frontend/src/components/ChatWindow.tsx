@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, Fragment, useEffect, useRef, useState } from 'react';
 import type { Conversation } from '../types/conversation';
 import type { Message } from '../types/message';
 import type { RunEvent, RunStatus, ToolCallState } from '../types/run';
@@ -15,6 +15,7 @@ interface ChatWindowProps {
   messages: Message[];
   onCancelRun: () => Promise<void>;
   onSend: (content: string) => Promise<void>;
+  runAnchorMessageId: string | null;
   runEvents: RunEvent[];
   runIsActive: boolean;
   runStatus: RunStatus | null;
@@ -28,6 +29,7 @@ export function ChatWindow({
   messages,
   onCancelRun,
   onSend,
+  runAnchorMessageId,
   runEvents,
   runIsActive,
   runStatus,
@@ -36,6 +38,11 @@ export function ChatWindow({
 }: ChatWindowProps) {
   const [content, setContent] = useState('');
   const [sending, setSending] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages.length, runEvents.length, streamingText]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -62,20 +69,27 @@ export function ChatWindow({
             <CancelRunButton runId={activeRunId} status={runStatus} onCancel={onCancelRun} />
           </div>
         </div>
-        <p>Live run events stream from backend SSE and are replayed from MySQL.</p>
-        <ToolCallTimeline toolCalls={toolCalls} />
-        <RunEventTimeline events={runEvents} />
       </header>
       <div className="message-list">
         {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
+          <Fragment key={message.id}>
+            <MessageBubble message={message} />
+            {message.id === runAnchorMessageId && (
+              <>
+                <RunEventTimeline events={runEvents} status={runStatus} />
+                <ToolCallTimeline toolCalls={toolCalls} />
+                <StreamingMessage text={streamingText} />
+              </>
+            )}
+          </Fragment>
         ))}
-        <StreamingMessage text={streamingText} />
         {messages.length === 0 && !streamingText && <p className="muted">Send a message to start the conversation.</p>}
+        <div ref={messagesEndRef} />
       </div>
       <form className="composer" onSubmit={handleSubmit}>
-        <input
+        <textarea
           disabled={runIsActive}
+          rows={1}
           value={content}
           onChange={(event) => setContent(event.target.value)}
           placeholder={runIsActive ? 'Agent is running...' : 'Ask the agent...'}

@@ -20,7 +20,12 @@ from backend.app.runtime.session_manager import (
     AgentSessionManager,
     get_default_agent_session_manager,
 )
-from backend.app.runtime.types import AgentTurnResult
+from backend.app.runtime.types import (
+    AgentEventRecord,
+    AgentToolCallRecord,
+    AgentToolResultRecord,
+    AgentTurnResult,
+)
 
 
 TERMINAL_RUN_STATUSES = {"succeeded", "failed", "cancelled"}
@@ -114,6 +119,7 @@ class AgentService:
                     "message_id": user_message.id,
                     "role": user_message.role,
                     "content_text": user_message.content_text,
+                    "sequence_no": user_message.sequence_no,
                 },
                 sequence_no=2,
             )
@@ -216,13 +222,33 @@ class AgentService:
             if message.sequence_no < input_message.sequence_no
         ]
 
-        try:
-            result = self.session_manager.run_turn_unlocked(
+        streaming_supported = self.session_manager.supports_streaming()
+        streaming_callbacks = (
+            self._build_streaming_callbacks(
                 user_id=user_id,
                 conversation_id=run.conversation_id,
-                history=history,
-                user_message=self._message_to_adapter_dict(input_message),
+                run_id=run.id,
             )
+            if streaming_supported
+            else {}
+        )
+
+        try:
+            if streaming_supported:
+                result = self.session_manager.run_turn_streaming_unlocked(
+                    user_id=user_id,
+                    conversation_id=run.conversation_id,
+                    history=history,
+                    user_message=self._message_to_adapter_dict(input_message),
+                    **streaming_callbacks,
+                )
+            else:
+                result = self.session_manager.run_turn_unlocked(
+                    user_id=user_id,
+                    conversation_id=run.conversation_id,
+                    history=history,
+                    user_message=self._message_to_adapter_dict(input_message),
+                )
         except Exception as exc:
             result = AgentTurnResult(error=f"{type(exc).__name__}: {exc}")
 
@@ -231,7 +257,14 @@ class AgentService:
             return self._cancel_locked(run, user_id, reason="cancelled_after_execution")
         if result.error:
             return self._fail_locked(run, user_id, result.error)
-        return self._persist_success_result(user_id=user_id, run=run, user_message=input_message, result=result)
+        return self._persist_success_result(
+            user_id=user_id,
+            run=run,
+            user_message=input_message,
+            result=result,
+            persist_adapter_events=not streaming_supported,
+            persist_tool_records=not streaming_supported,
+        )
 
     def _existing_result(self, run: AgentRun, user_id: str) -> AgentTurnServiceResult:
         messages = MessageRepository(self.db).list_for_conversation(user_id, run.conversation_id, limit=500)
@@ -254,22 +287,29 @@ class AgentService:
         run: AgentRun,
         user_message: Message,
         result: AgentTurnResult,
+        persist_adapter_events: bool = True,
+        persist_tool_records: bool = True,
     ) -> AgentTurnServiceResult:
         if not result.assistant_messages:
             return self._fail_locked(run, user_id, "Agent produced no assistant message.")
 
         conversation_id = run.conversation_id
-        self._persist_adapter_events(
-            user_id=user_id,
-            conversation_id=conversation_id,
-            run_id=run.id,
-            result=result,
-        )
-        tool_calls = self._persist_tool_records(
-            user_id=user_id,
-            conversation_id=conversation_id,
-            run_id=run.id,
-            result=result,
+        if persist_adapter_events:
+            self._persist_adapter_events(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                run_id=run.id,
+                result=result,
+            )
+        tool_calls = (
+            self._persist_tool_records(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                run_id=run.id,
+                result=result,
+            )
+            if persist_tool_records
+            else ToolCallRepository(self.db).list_for_run(user_id, run.id)
         )
 
         message_repo = MessageRepository(self.db)
@@ -295,6 +335,7 @@ class AgentService:
                     "message_id": message.id,
                     "role": message.role,
                     "content_text": message.content_text,
+                    "sequence_no": message.sequence_no,
                 },
             )
 
@@ -317,6 +358,124 @@ class AgentService:
         self.db.commit()
         self._refresh_result(persisted)
         return persisted
+
+    def _build_streaming_callbacks(
+        self,
+        *,
+        user_id: str,
+        conversation_id: str,
+        run_id: str,
+    ) -> dict[str, Any]:
+        external_calls: dict[str, ToolCall] = {}
+
+        def persist_event(event: AgentEventRecord) -> None:
+            if event.event_type in {"run_started", "run_finished"}:
+                return
+            self._append_event(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                run_id=run_id,
+                event_type=event.event_type,
+                event_json=event.event_json,
+            )
+            self.db.commit()
+
+        def persist_tool_call(record: AgentToolCallRecord) -> None:
+            external_id = record.external_id or f"{record.tool_name}:{len(external_calls) + 1}"
+            call_repo = ToolCallRepository(self.db)
+            call = external_calls.get(external_id)
+            if record.status == "running":
+                if call is None:
+                    call = call_repo.create_tool_call(
+                        user_id=user_id,
+                        conversation_id=conversation_id,
+                        run_id=run_id,
+                        tool_name=record.tool_name,
+                        tool_input_json=record.tool_input_json,
+                        status="running",
+                        started_at=record.started_at,
+                    )
+                    external_calls[external_id] = call
+                self._append_event(
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    run_id=run_id,
+                    event_type="tool_call_started",
+                    event_json={
+                        "tool_call_id": call.id,
+                        "tool_name": call.tool_name,
+                        "status": "running",
+                    },
+                )
+            else:
+                if call is None:
+                    call = call_repo.create_tool_call(
+                        user_id=user_id,
+                        conversation_id=conversation_id,
+                        run_id=run_id,
+                        tool_name=record.tool_name,
+                        tool_input_json=record.tool_input_json,
+                        status="running",
+                        started_at=record.started_at,
+                    )
+                    external_calls[external_id] = call
+                final_status = "failed" if record.status == "denied" else record.status
+                call_repo.mark_finished(call.id, user_id, final_status)
+                self._append_event(
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    run_id=run_id,
+                    event_type="tool_call_failed" if final_status == "failed" else "tool_call_finished",
+                    event_json={
+                        "tool_call_id": call.id,
+                        "tool_name": call.tool_name,
+                        "status": record.status,
+                    },
+                )
+            self.db.commit()
+
+        def persist_tool_result(record: AgentToolResultRecord) -> None:
+            tool_call = self._resolve_streaming_tool_call(record.tool_call_external_id, external_calls)
+            if tool_call is None:
+                return
+            ToolResultRepository(self.db).create_tool_result(
+                user_id=user_id,
+                tool_call_id=tool_call.id,
+                output_text=record.output_text,
+                output_json=record.output_json,
+                evidence_json=record.evidence_json,
+                error_type=record.error_type,
+            )
+            self._append_event(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                run_id=run_id,
+                event_type="tool_result_created",
+                event_json={
+                    "tool_call_id": tool_call.id,
+                    "tool_name": tool_call.tool_name,
+                    "status": "failed" if record.error_type else "succeeded",
+                    "output_text": (record.output_text or "")[:1000],
+                },
+            )
+            self.db.commit()
+
+        return {
+            "on_event": persist_event,
+            "on_tool_call": persist_tool_call,
+            "on_tool_result": persist_tool_result,
+        }
+
+    def _resolve_streaming_tool_call(
+        self,
+        external_id: str | None,
+        external_calls: dict[str, ToolCall],
+    ) -> ToolCall | None:
+        if external_id and external_id in external_calls:
+            return external_calls[external_id]
+        if len(external_calls) == 1:
+            return next(iter(external_calls.values()))
+        return None
 
     def _fail_locked(self, run: AgentRun, user_id: str, error_message: str) -> AgentTurnServiceResult:
         public_error = self._public_error(error_message)

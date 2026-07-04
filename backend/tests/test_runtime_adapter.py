@@ -89,3 +89,43 @@ def test_runtime_adapter_collects_tool_calls_and_results(tmp_path):
     assert result.tool_results[0].tool_call_external_id == "tool-1"
     assert result.tool_results[0].output_text == "README content"
     assert result.final_text == "done"
+
+
+def test_runtime_adapter_streaming_emits_callbacks(monkeypatch, tmp_path):
+    def fake_streaming_loop(runtime: Any, messages: list[dict[str, Any]], context: dict[str, Any], callbacks) -> None:
+        del runtime, context
+        callbacks.on_text_delta("hello ")
+        callbacks.on_text_delta("stream")
+        block = {
+            "type": "tool_use",
+            "id": "tool-1",
+            "name": "read_file",
+            "input": {"path": "README.md"},
+        }
+        callbacks.on_tool_call_started(block)
+        callbacks.on_tool_call_finished(block, "README content", "succeeded")
+        messages.append({"role": "assistant", "content": [{"type": "text", "text": "hello stream"}]})
+
+    monkeypatch.setattr("backend.app.runtime.agent_adapter.agent_loop_streaming", fake_streaming_loop)
+    adapter = AgentRuntimeAdapter(runtime_factory=lambda config_path: FakeRuntime())
+    events = []
+    tool_calls = []
+    tool_results = []
+
+    result = adapter.run_turn_streaming(
+        conversation_id="conv-1",
+        user_id="user-1",
+        history=[],
+        user_message={"role": "user", "content_text": "hi"},
+        workspace_path=str(tmp_path),
+        on_event=events.append,
+        on_tool_call=tool_calls.append,
+        on_tool_result=tool_results.append,
+    )
+
+    assert result.final_text == "hello stream"
+    assert events[0].event_type == "assistant_delta"
+    assert events[0].event_json == {"role": "assistant", "delta": "hello stream"}
+    assert [record.status for record in tool_calls] == ["running", "succeeded"]
+    assert tool_results[0].tool_call_external_id == "tool-1"
+    assert result.events == events

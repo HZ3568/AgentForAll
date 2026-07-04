@@ -13,6 +13,7 @@ from backend.app.main import app
 from backend.app.models.agent_run import AgentRun
 from backend.app.models.message import Message
 from backend.app.models.run_event import RunEvent
+from backend.app.models.tool_call import ToolCall
 from backend.app.runtime.session_manager import AgentSessionManager
 from backend.app.runtime.types import (
     AgentEventRecord,
@@ -54,6 +55,51 @@ class FakeAdapter:
                 )
             ],
             final_text="streamed answer",
+        )
+
+
+class FakeStreamingAdapter:
+    def run_turn_streaming(self, **kwargs):
+        on_event = kwargs.get("on_event")
+        on_tool_call = kwargs.get("on_tool_call")
+        on_tool_result = kwargs.get("on_tool_result")
+
+        if on_event:
+            on_event(AgentEventRecord(event_type="assistant_delta", event_json={"delta": "first "}))
+            on_event(AgentEventRecord(event_type="assistant_delta", event_json={"delta": "second"}))
+        if on_tool_call:
+            on_tool_call(
+                AgentToolCallRecord(
+                    external_id="tool-1",
+                    tool_name="read_file",
+                    tool_input_json={"path": "README.md"},
+                    status="running",
+                )
+            )
+            on_tool_call(
+                AgentToolCallRecord(
+                    external_id="tool-1",
+                    tool_name="read_file",
+                    tool_input_json={"path": "README.md"},
+                    status="succeeded",
+                )
+            )
+        if on_tool_result:
+            on_tool_result(
+                AgentToolResultRecord(
+                    tool_call_external_id="tool-1",
+                    output_text="README content",
+                )
+            )
+        return AgentTurnResult(
+            assistant_messages=[
+                {
+                    "role": "assistant",
+                    "content_json": {"type": "text", "text": "first second"},
+                    "content_text": "first second",
+                }
+            ],
+            final_text="first second",
         )
 
 
@@ -182,6 +228,43 @@ def test_sse_stream_outputs_existing_events_and_finishes(app_client: TestClient,
     assert "data:" in body
 
 
+def test_streaming_run_persists_deltas_and_tools_before_final_message(
+    app_client: TestClient,
+    db_session: Session,
+    tmp_path,
+):
+    manager = AgentSessionManager(adapter=FakeStreamingAdapter(), workspace_root=tmp_path)
+    install_fake_agent_overrides(db_session, manager)
+    headers = auth_headers(app_client, "alice", "alice@example.com")
+    conversation = create_conversation(app_client, headers)
+
+    response = app_client.post(
+        f"/api/v1/agent/conversations/{conversation['id']}/runs",
+        json={"content": "stream this"},
+        headers=headers,
+    )
+
+    assert response.status_code == 202
+    run_id = response.json()["run_id"]
+    messages = list(db_session.scalars(select(Message).order_by(Message.sequence_no.asc())))
+    events = list(
+        db_session.scalars(
+            select(RunEvent).where(RunEvent.run_id == run_id).order_by(RunEvent.sequence_no.asc())
+        )
+    )
+    tool_calls = list(db_session.scalars(select(ToolCall).where(ToolCall.run_id == run_id)))
+
+    event_types = [event.event_type for event in events]
+    assert [message.role for message in messages] == ["user", "assistant"]
+    assert messages[1].content_text == "first second"
+    assert event_types.count("assistant_delta") == 2
+    assert event_types.index("assistant_delta") < event_types.index("assistant_message_created")
+    assert event_types.index("tool_call_started") < event_types.index("assistant_message_created")
+    assert event_types.index("assistant_message_created") < event_types.index("run_finished")
+    assert len(tool_calls) == 1
+    assert tool_calls[0].status == "succeeded"
+
+
 def test_second_run_for_same_conversation_is_rejected_while_active(
     app_client: TestClient,
     db_session: Session,
@@ -234,4 +317,3 @@ def test_failed_background_run_marks_failed_and_releases_lock(
     )
 
     assert second.status_code == 202
-

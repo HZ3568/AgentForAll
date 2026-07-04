@@ -12,7 +12,12 @@ interface UseRunEventsOptions {
 
 export function useRunEvents(runId: string | null, options: UseRunEventsOptions) {
   const optionsRef = useRef(options);
+  const lastSequenceNoRef = useRef(0);
   optionsRef.current = options;
+
+  useEffect(() => {
+    lastSequenceNoRef.current = options.afterSequenceNo ?? 0;
+  }, [runId, options.afterSequenceNo]);
 
   useEffect(() => {
     if (!runId || !options.enabled) {
@@ -21,7 +26,8 @@ export function useRunEvents(runId: string | null, options: UseRunEventsOptions)
 
     const abortController = new AbortController();
     let buffer = '';
-    const after = options.afterSequenceNo ? `?after_sequence_no=${options.afterSequenceNo}` : '';
+    const afterSequenceNo = options.afterSequenceNo ?? lastSequenceNoRef.current;
+    const after = afterSequenceNo ? `?after_sequence_no=${afterSequenceNo}` : '';
 
     async function connect() {
       try {
@@ -51,6 +57,7 @@ export function useRunEvents(runId: string | null, options: UseRunEventsOptions)
           for (const frame of frames) {
             const event = parseSseFrame(frame);
             if (event) {
+              lastSequenceNoRef.current = Math.max(lastSequenceNoRef.current, event.sequence_no);
               optionsRef.current.onEvent(event);
             }
           }
@@ -84,4 +91,3 @@ function parseSseFrame(frame: string): RunEvent | null {
   }
   return data as RunEvent;
 }
-

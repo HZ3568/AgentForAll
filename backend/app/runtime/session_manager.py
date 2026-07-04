@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from backend.app.core.config import get_settings
 from backend.app.runtime.agent_adapter import AgentRuntimeAdapter
-from backend.app.runtime.types import AgentTurnResult
+from backend.app.runtime.types import (
+    AgentEventRecord,
+    AgentToolCallRecord,
+    AgentToolResultRecord,
+    AgentTurnResult,
+)
 
 
 class AgentRunConflict(RuntimeError):
@@ -74,6 +79,42 @@ class AgentSessionManager:
             workspace_path=str(workspace_path),
             memory_path=str(memory_path),
         )
+
+    def run_turn_streaming_unlocked(
+        self,
+        *,
+        user_id: str,
+        conversation_id: str,
+        history: list[dict[str, Any]],
+        user_message: dict[str, Any],
+        on_event: Callable[[AgentEventRecord], None] | None = None,
+        on_tool_call: Callable[[AgentToolCallRecord], None] | None = None,
+        on_tool_result: Callable[[AgentToolResultRecord], None] | None = None,
+    ) -> AgentTurnResult:
+        if not self.supports_streaming():
+            return self.run_turn_unlocked(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                history=history,
+                user_message=user_message,
+            )
+
+        workspace_path = self.prepare_workspace(user_id, conversation_id)
+        memory_path = self.prepare_user_memory(user_id)
+        return self.adapter.run_turn_streaming(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            history=history,
+            user_message=user_message,
+            workspace_path=str(workspace_path),
+            memory_path=str(memory_path),
+            on_event=on_event,
+            on_tool_call=on_tool_call,
+            on_tool_result=on_tool_result,
+        )
+
+    def supports_streaming(self) -> bool:
+        return callable(getattr(self.adapter, "run_turn_streaming", None))
 
     def prepare_workspace(self, user_id: str, conversation_id: str) -> Path:
         workspace = self.workspace_root / f"user_{user_id}" / f"conv_{conversation_id}"

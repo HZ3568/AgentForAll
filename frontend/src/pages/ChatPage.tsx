@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createConversation, listConversations } from '../api/conversations';
 import { listMessages } from '../api/messages';
 import { cancelAgentRun, createAgentRun } from '../api/runs';
@@ -20,11 +20,13 @@ export function ChatPage({ user, onLogout }: ChatPageProps) {
   const [selected, setSelected] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [runAnchorMessageId, setRunAnchorMessageId] = useState<string | null>(null);
   const [runStatus, setRunStatus] = useState<RunStatus | null>(null);
   const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
   const [toolCalls, setToolCalls] = useState<ToolCallState[]>([]);
   const [streamingText, setStreamingText] = useState('');
   const [error, setError] = useState('');
+  const processedEventSequences = useRef<Set<number>>(new Set());
 
   const runIsActive = runStatus === 'queued' || runStatus === 'running' || runStatus === 'cancelling';
 
@@ -66,10 +68,12 @@ export function ChatPage({ user, onLogout }: ChatPageProps) {
 
   function resetRunState() {
     setActiveRunId(null);
+    setRunAnchorMessageId(null);
     setRunStatus(null);
     setRunEvents([]);
     setToolCalls([]);
     setStreamingText('');
+    processedEventSequences.current.clear();
   }
 
   async function handleCreateConversation() {
@@ -84,6 +88,7 @@ export function ChatPage({ user, onLogout }: ChatPageProps) {
     setRunEvents([]);
     setToolCalls([]);
     setStreamingText('');
+    processedEventSequences.current.clear();
     let target = selected;
     if (!selected) {
       target = await createConversation('New Chat');
@@ -96,6 +101,7 @@ export function ChatPage({ user, onLogout }: ChatPageProps) {
       const response = await createAgentRun(target!.id, content);
       setRunStatus(response.status);
       setActiveRunId(response.run_id);
+      setRunAnchorMessageId(response.user_message.id);
       appendMessageOnce(response.user_message);
       await refreshConversations();
     } catch (err) {
@@ -118,6 +124,10 @@ export function ChatPage({ user, onLogout }: ChatPageProps) {
   }
 
   function handleRunEvent(event: RunEvent) {
+    if (processedEventSequences.current.has(event.sequence_no)) {
+      return;
+    }
+    processedEventSequences.current.add(event.sequence_no);
     setRunEvents((items) =>
       items.some((item) => item.sequence_no === event.sequence_no) ? items : [...items, event],
     );
@@ -158,7 +168,7 @@ export function ChatPage({ user, onLogout }: ChatPageProps) {
     if (event.event_type === 'assistant_delta') {
       const delta = typeof payload.delta === 'string' ? payload.delta : typeof payload.text === 'string' ? payload.text : '';
       if (delta) {
-        setStreamingText((text) => (text.endsWith(delta) ? text : `${text}${delta}`));
+        setStreamingText((text) => `${text}${delta}`);
       }
       return;
     }
@@ -183,6 +193,7 @@ export function ChatPage({ user, onLogout }: ChatPageProps) {
     const messageId = typeof payload.message_id === 'string' ? payload.message_id : null;
     const contentText = typeof payload.content_text === 'string' ? payload.content_text : '';
     const role = payload.role === 'user' || payload.role === 'assistant' ? payload.role : fallbackRole;
+    const sequenceNo = typeof payload.sequence_no === 'number' ? payload.sequence_no : nextMessageSequenceNo();
     if (!messageId || !selected || !user) {
       return null;
     }
@@ -194,7 +205,7 @@ export function ChatPage({ user, onLogout }: ChatPageProps) {
       content_json: { type: 'text', text: contentText },
       content_text: contentText,
       token_count: null,
-      sequence_no: nextMessageSequenceNo(),
+      sequence_no: sequenceNo,
       created_at: event.created_at,
     };
   }
@@ -245,6 +256,7 @@ export function ChatPage({ user, onLogout }: ChatPageProps) {
           messages={messages}
           onCancelRun={handleCancelRun}
           onSend={handleSend}
+          runAnchorMessageId={runAnchorMessageId}
           runEvents={runEvents}
           runIsActive={runIsActive}
           runStatus={runStatus}

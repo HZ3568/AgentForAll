@@ -10,13 +10,14 @@ export function ToolCallTimeline({ toolCalls }: ToolCallTimelineProps) {
   }
 
   return (
-    <div className="tool-summary">
+    <div className="tool-timeline">
+      <div className="tool-timeline-title">Tools</div>
       {toolCalls.map((toolCall) => (
         <span className={`tool-call ${toolCall.status}`} key={toolCall.id}>
-          {toolCall.tool_name} · {toolCall.status}
+          <span>{toolCall.tool_name}</span>
+          <small>{toolCall.status}</small>
         </span>
       ))}
     </div>
   );
 }
-

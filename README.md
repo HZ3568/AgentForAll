@@ -79,7 +79,13 @@ alembic -c backend/alembic.ini upgrade head
 启动后端：
 
 ```bash
-uvicorn backend.app.main:app --reload
+python scripts/dev_backend.py
+```
+
+开发脚本只监听 `backend/` 和 `codeagent/` 的源码变化，不监听 `.runtime_workspaces/`。如果直接使用 uvicorn，请至少限制 reload 目录：
+
+```bash
+uvicorn backend.app.main:app --reload --reload-dir backend --reload-dir codeagent
 ```
 
 启动前端：

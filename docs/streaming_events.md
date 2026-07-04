@@ -85,6 +85,7 @@ Authorization: Bearer <token>
 - in-process lock。
 - 单进程开发友好。
 - 生产环境需要 Redis / queue / distributed lock。
+- 开发环境不要用裸 `uvicorn backend.app.main:app --reload` 监听整个仓库；Agent 写入 `.runtime_workspaces/` 会触发 reload。使用 `python scripts/dev_backend.py` 或显式设置 `--reload-dir backend --reload-dir codeagent`。
 
 ## 阶段 5 计划
 
@@ -92,4 +93,3 @@ Authorization: Bearer <token>
 - 文件上传和 workspace 文件管理。
 - 更严格的工具沙箱。
 - Run 恢复与任务队列。
-

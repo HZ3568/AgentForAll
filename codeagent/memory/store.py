@@ -14,8 +14,13 @@ DEFAULT_MAX_SELECTED = 5
 
 
 class MemoryStore:
-    def __init__(self, workdir: Path, consolidate_threshold: int = DEFAULT_CONSOLIDATE_THRESHOLD) -> None:
-        self.memory_dir = workdir / ".memory"
+    def __init__(
+        self,
+        workdir: Path,
+        memory_dir: Path | None = None,
+        consolidate_threshold: int = DEFAULT_CONSOLIDATE_THRESHOLD,
+    ) -> None:
+        self.memory_dir = memory_dir or workdir / ".memory"
         self.index = self.memory_dir / "MEMORY.md"
         self.consolidate_threshold = consolidate_threshold
         self._selection_cache: dict[tuple[str, str, int], list[str]] = {}

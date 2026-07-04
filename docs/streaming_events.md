@@ -84,6 +84,7 @@ Authorization: Bearer <token>
 - in-process background task。
 - in-process lock。
 - 单进程开发友好。
+- Runtime Markdown memory 已按用户共享，但 `.tasks/.mailboxes/.worktrees` 仍保持 conversation 级运行态。
 - 生产环境需要 Redis / queue / distributed lock。
 - 开发环境不要用裸 `uvicorn backend.app.main:app --reload` 监听整个仓库；Agent 写入 `.runtime_workspaces/` 会触发 reload。使用 `python scripts/dev_backend.py` 或显式设置 `--reload-dir backend --reload-dir codeagent`。
 

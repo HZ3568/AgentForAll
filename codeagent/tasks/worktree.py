@@ -16,7 +16,6 @@ class WorktreeManager:
         self.workdir = workdir
         self.tasks = tasks
         self.worktrees_dir = workdir / ".worktrees"
-        self.worktrees_dir.mkdir(exist_ok=True)
 
     def validate_name(self, name: str) -> str | None:
         if not name:
@@ -36,6 +35,7 @@ class WorktreeManager:
             return False, "Error: git timeout"
 
     def log_event(self, event_type: str, worktree_name: str, task_id: str = "") -> None:
+        self.worktrees_dir.mkdir(parents=True, exist_ok=True)
         event = {"type": event_type, "worktree": worktree_name, "task_id": task_id, "ts": time.time()}
         with (self.worktrees_dir / "events.jsonl").open("a", encoding="utf-8") as f:
             f.write(json.dumps(event) + "\n")
@@ -49,6 +49,7 @@ class WorktreeManager:
                 self.tasks.load(task_id)
             except FileNotFoundError:
                 return f"Error: task {task_id} not found"
+        self.worktrees_dir.mkdir(parents=True, exist_ok=True)
         path = self.worktrees_dir / name
         if path.exists():
             return f"Worktree '{name}' already exists at {path}"

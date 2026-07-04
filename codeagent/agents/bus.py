@@ -10,7 +10,6 @@ from codeagent.core.console import terminal_print
 class MessageBus:
     def __init__(self, workdir: Path) -> None:
         self.mailbox_dir = workdir / ".mailboxes"
-        self.mailbox_dir.mkdir(exist_ok=True)
 
     def send(self, from_agent: str, to_agent: str, content: str, msg_type: str = "message", metadata: dict | None = None) -> None:
         msg = {
@@ -21,6 +20,7 @@ class MessageBus:
             "ts": time.time(),
             "metadata": metadata or {},
         }
+        self.mailbox_dir.mkdir(parents=True, exist_ok=True)
         inbox = self.mailbox_dir / f"{to_agent}.jsonl"
         with inbox.open("a", encoding="utf-8") as f:
             f.write(json.dumps(msg) + "\n")

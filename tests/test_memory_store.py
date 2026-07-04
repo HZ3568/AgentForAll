@@ -38,6 +38,24 @@ def test_write_memory_file_rebuilds_index(tmp_path: Path):
     assert "- [user-tabs](user-tabs.md) - User prefers tabs for indentation." in index
 
 
+def test_memory_store_can_use_external_memory_dir(tmp_path: Path):
+    workdir = tmp_path / "conversation"
+    memory_dir = tmp_path / "user" / ".memory"
+    store = MemoryStore(workdir, memory_dir=memory_dir)
+
+    path = store.write_memory_file(
+        "shared-memory",
+        "user",
+        "Shared user memory.",
+        "This memory is shared across conversations.",
+    )
+
+    assert path.parent == memory_dir
+    assert path.exists()
+    assert not (workdir / ".memory").exists()
+    assert "Shared user memory." in store.build_context([{"role": "user", "content": "shared"}])
+
+
 def test_build_context_loads_llm_selected_memory(tmp_path: Path):
     store = MemoryStore(tmp_path)
     store.write_memory_file(

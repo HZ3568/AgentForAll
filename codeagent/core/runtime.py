@@ -84,7 +84,7 @@ def create_runtime(config_path: str | None = None) -> Runtime:
         settings=settings,
         client=client,
         hooks=HookManager(),
-        memory=MemoryStore(settings.workdir),
+        memory=MemoryStore(settings.workdir, memory_dir=settings.memory_dir),
         skills=SkillRegistry(settings.workdir),
         tasks=tasks,
         worktrees=WorktreeManager(settings.workdir, tasks),

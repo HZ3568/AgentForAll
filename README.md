@@ -36,6 +36,33 @@ frontend -> backend -> codeagent
 
 阶段 4 暂不实现 WebSocket、复杂工具审批、文件上传、Memory 同步和多进程分布式队列。
 
+## Runtime Scope
+
+Web Runtime 将 conversation 文件工作区和 user 长期记忆分开：
+
+```text
+.runtime_workspaces/
+  user_<user_id>/
+    .memory/
+    conv_<conversation_id>/
+      scratch/
+      uploads/
+      artifacts/
+      traces/
+      codeagent_web_config.yaml
+```
+
+- `workdir` 指向 `conv_<conversation_id>/`，工具读写仍按会话隔离。
+- `memory_dir` 指向 `user_<user_id>/.memory/`，同一用户的多个会话共享长期记忆。
+- CLI 默认不设置 `memory_dir`，继续使用 `<workdir>/.memory`。
+
+旧 conversation 级 memory 可非破坏性合并：
+
+```bash
+python scripts/migrate_runtime_memory.py --dry-run
+python scripts/migrate_runtime_memory.py --apply
+```
+
 ## 目录
 
 ```text

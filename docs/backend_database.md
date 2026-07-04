@@ -15,6 +15,31 @@
 - `tasks`、`scheduled_jobs`：Web 层任务和计划。
 - `workspace_files`：后续文件上传和工作区文件元数据。
 
+## Runtime 文件状态
+
+数据库中的 `memories` 表是 Web 业务层预留的结构化 memory 记录；`codeagent` Runtime 的 Markdown memory 仍是文件状态。Web Runtime 使用 user 级文件 memory：
+
+```text
+.runtime_workspaces/
+  user_<user_id>/
+    .memory/
+    conv_<conversation_id>/
+      scratch/
+      uploads/
+      artifacts/
+      traces/
+      codeagent_web_config.yaml
+```
+
+`codeagent_web_config.yaml` 将 `workdir` 指向 conversation workspace，将 `memory_dir` 指向 user `.memory`。因此工具文件按 conversation 隔离，长期记忆按 user 共享。
+
+旧 conversation 级 `.memory` 可以用以下脚本非破坏性合并到 user 级 `.memory`：
+
+```bash
+python scripts/migrate_runtime_memory.py --dry-run
+python scripts/migrate_runtime_memory.py --apply
+```
+
 ## 关系
 
 ```text

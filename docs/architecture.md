@@ -61,6 +61,7 @@ sequenceDiagram
 系统提示词每轮重新组装：
 
 - `MemoryStore` 维护 `.memory/MEMORY.md` 索引，每条记忆存为独立 Markdown 文件并带 YAML frontmatter。
+- CLI 默认使用 `<workdir>/.memory`；Web Runtime 可通过 `memory_dir` 或 `CODEAGENT_MEMORY_DIR` 将 Memory 指向用户级目录，同时保持工具 `workdir` 为会话级目录。
 - 每轮请求前根据近期用户消息选择相关记忆文件，将索引和相关文件内容一起注入系统提示词。
 - 每轮普通结束后从压缩前快照中抽取新的持久偏好、反馈、项目事实或外部引用。
 - 当记忆文件达到阈值后，调用模型合并重复/过时条目并重建索引。

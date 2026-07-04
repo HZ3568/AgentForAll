@@ -65,19 +65,27 @@ class AgentSessionManager:
         user_message: dict[str, Any],
     ) -> AgentTurnResult:
         workspace_path = self.prepare_workspace(user_id, conversation_id)
+        memory_path = self.prepare_user_memory(user_id)
         return self.adapter.run_turn(
             conversation_id=conversation_id,
             user_id=user_id,
             history=history,
             user_message=user_message,
             workspace_path=str(workspace_path),
+            memory_path=str(memory_path),
         )
 
     def prepare_workspace(self, user_id: str, conversation_id: str) -> Path:
         workspace = self.workspace_root / f"user_{user_id}" / f"conv_{conversation_id}"
         for child in ("scratch", "uploads", "artifacts", "traces"):
             (workspace / child).mkdir(parents=True, exist_ok=True)
+        self.prepare_user_memory(user_id)
         return workspace
+
+    def prepare_user_memory(self, user_id: str) -> Path:
+        memory_path = self.workspace_root / f"user_{user_id}" / ".memory"
+        memory_path.mkdir(parents=True, exist_ok=True)
+        return memory_path
 
     def _get_lock(self, key: str) -> threading.Lock:
         with self._locks_guard:
@@ -98,4 +106,3 @@ def get_default_agent_session_manager() -> AgentSessionManager:
         if _default_session_manager is None:
             _default_session_manager = AgentSessionManager()
         return _default_session_manager
-

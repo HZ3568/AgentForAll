@@ -55,11 +55,28 @@ Agent 核心能力层。
 ```text
 .runtime_workspaces/
   user_<user_id>/
+    .memory/
     conv_<conversation_id>/
       scratch/
       uploads/
       artifacts/
       traces/
+      codeagent_web_config.yaml
+```
+
+Web Runtime 的 scope 分工：
+
+- `user_<user_id>/.memory/` 是用户级长期记忆，同一用户的多个 conversation 共享。
+- `conv_<conversation_id>/` 是会话级文件工作区，工具读写、scratch、uploads、artifacts、traces 都限制在这里。
+- `.tasks/.mailboxes/.worktrees` 仍保持 conversation 级，并按需创建，避免跨会话串扰。
+
+Adapter 写入 `codeagent_web_config.yaml` 时同时设置 `workdir` 和 `memory_dir`。CLI 默认不设置 `memory_dir`，继续使用本地 `<workdir>/.memory`。
+
+旧 conversation 级 memory 可通过非破坏性脚本合并：
+
+```bash
+python scripts/migrate_runtime_memory.py --dry-run
+python scripts/migrate_runtime_memory.py --apply
 ```
 
 当前目录隔离用于 Web 运行态组织。工具层更细粒度的文件访问限制会在后续阶段增强。

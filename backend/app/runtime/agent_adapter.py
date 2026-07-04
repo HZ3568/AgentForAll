@@ -40,6 +40,7 @@ class AgentRuntimeAdapter:
         history: list[dict[str, Any]],
         user_message: dict[str, Any],
         workspace_path: str | None = None,
+        memory_path: str | None = None,
     ) -> AgentTurnResult:
         del conversation_id, user_id
         messages = [self._to_codeagent_message(message) for message in history]
@@ -47,7 +48,7 @@ class AgentRuntimeAdapter:
         turn_start = len(messages)
 
         try:
-            runtime = self._create_runtime(workspace_path)
+            runtime = self._create_runtime(workspace_path, memory_path)
             runtime.reset_tool_tracking()
             runtime.current_scratch_dir = (
                 str(Path(workspace_path) / "scratch") if workspace_path else None
@@ -68,15 +69,24 @@ class AgentRuntimeAdapter:
         new_messages = messages[turn_start:]
         return self._collect_result(new_messages)
 
-    def _create_runtime(self, workspace_path: str | None) -> Any:
+    def _create_runtime(self, workspace_path: str | None, memory_path: str | None = None) -> Any:
         if workspace_path is None:
             return self._runtime_factory(None)
 
         workspace = Path(workspace_path)
         workspace.mkdir(parents=True, exist_ok=True)
+        memory = Path(memory_path) if memory_path else workspace / ".memory"
+        memory.mkdir(parents=True, exist_ok=True)
         config_path = workspace / "codeagent_web_config.yaml"
         config_path.write_text(
-            yaml.safe_dump({"workdir": str(workspace)}, allow_unicode=True, sort_keys=False),
+            yaml.safe_dump(
+                {
+                    "workdir": str(workspace),
+                    "memory_dir": str(memory),
+                },
+                allow_unicode=True,
+                sort_keys=False,
+            ),
             encoding="utf-8",
         )
         return self._runtime_factory(str(config_path))

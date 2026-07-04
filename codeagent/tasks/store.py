@@ -21,7 +21,6 @@ class Task:
 class TaskStore:
     def __init__(self, workdir: Path) -> None:
         self.tasks_dir = workdir / ".tasks"
-        self.tasks_dir.mkdir(exist_ok=True)
 
     def path(self, task_id: str) -> Path:
         return self.tasks_dir / f"{task_id}.json"
@@ -39,12 +38,15 @@ class TaskStore:
         return task
 
     def save(self, task: Task) -> None:
+        self.tasks_dir.mkdir(parents=True, exist_ok=True)
         self.path(task.id).write_text(json.dumps(asdict(task), indent=2), encoding="utf-8")
 
     def load(self, task_id: str) -> Task:
         return Task(**json.loads(self.path(task_id).read_text(encoding="utf-8")))
 
     def list(self) -> list[Task]:
+        if not self.tasks_dir.exists():
+            return []
         return [Task(**json.loads(p.read_text(encoding="utf-8"))) for p in sorted(self.tasks_dir.glob("task_*.json"))]
 
     def can_start(self, task_id: str) -> bool:

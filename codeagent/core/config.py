@@ -20,6 +20,7 @@ class WebSearchSettings:
 @dataclass
 class Settings:
     workdir: Path
+    memory_dir: Path | None
     model_id: str
     primary_model: str
     fallback_model_id: str | None
@@ -115,6 +116,8 @@ def load_settings(config_path: str | Path | None = None) -> Settings:
     fallback = os.getenv("FALLBACK_MODEL_ID") or config.get("fallback_model_id")
     base_url = os.getenv("ANTHROPIC_BASE_URL") or config.get("anthropic_base_url")
     workdir = Path(os.getenv("CODEAGENT_WORKDIR") or config.get("workdir") or ".").resolve()
+    memory_dir_value = os.getenv("CODEAGENT_MEMORY_DIR") or config.get("memory_dir")
+    memory_dir = Path(memory_dir_value).resolve() if memory_dir_value else None
     mode = os.getenv("CODEAGENT_MODE") or str(runtime.get("mode", "default"))
     search_provider = _auto_web_search_provider(
         str(web_search["provider"]) if "provider" in web_search else None
@@ -132,6 +135,7 @@ def load_settings(config_path: str | Path | None = None) -> Settings:
 
     return Settings(
         workdir=workdir,
+        memory_dir=memory_dir,
         model_id=model_id,
         primary_model=model_id,
         fallback_model_id=fallback,

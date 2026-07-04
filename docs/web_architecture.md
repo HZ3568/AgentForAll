@@ -10,48 +10,53 @@ frontend -> backend -> codeagent
 
 React + Vite + TypeScript 用户交互层。
 
-- 负责对话工作台、任务看板、学习计划日历、Memory 管理和工具调用日志视图。
-- 只能通过 `backend` HTTP/SSE/WebSocket API 与系统交互。
-- 不能直接 import 或调用 `codeagent`。
+- 只通过 `backend` API 与系统通信。
+- 不直接 import 或调用 `codeagent`。
+- 阶段 3 调用非流式 Agent turn API，展示用户消息、assistant 回复、运行状态和工具调用摘要。
 
 ## backend
 
 FastAPI Web 服务层。
 
-- 负责 HTTP API、用户认证、权限校验、MySQL 持久化、会话隔离和运行状态管理。
-- 可以 import `codeagent`，但必须通过 adapter/service 层调用 Runtime。
-- 路由层不直接承载 Agent 核心逻辑。
-- 所有 conversation、message、tool、task、memory 查询都必须校验当前用户所有权。
+- 负责 HTTP API、JWT 鉴权、权限校验、MySQL 持久化、会话隔离和运行状态管理。
+- 通过 service/runtime adapter 调用 `codeagent`。
+- API router 不直接 import `codeagent`。
+- Repository 查询用户私有数据时必须显式绑定 `user_id`。
 
 ## codeagent
 
 Agent 核心能力层。
 
-- 负责 Runtime、Agent Loop、工具池、Memory、Tasks、MCP、CLI 等能力。
+- 负责 Runtime、Agent Loop、工具池、Memory、Tasks、MCP、CLI。
 - 不依赖 `backend` 或 `frontend`。
 - 不引入 FastAPI、SQLAlchemy、JWT、MySQL、React 等 Web 层概念。
-- CLI 继续使用本地 `.sessions/.memory/.tasks` 文件机制；Web 端后续以 MySQL 作为主要持久化。
+- CLI 继续使用本地 `.sessions/.memory/.tasks` 文件机制。
 
-## Phase 0 Scope
+## 阶段进展
 
-- 删除旧原型 Web。
-- 建立 FastAPI 最小服务骨架。
-- 暴露 `GET /api/v1/health`。
-- 保留 CLI 和 `codeagent/core` Agent Loop。
-- 暂不实现用户系统、数据库模型、React 页面和 Agent 对话接口。
+- 阶段 0：移除旧 Streamlit Web，建立 FastAPI 最小骨架。
+- 阶段 1：建立 MySQL、SQLAlchemy、Alembic、ORM 和 Repository 地基。
+- 阶段 2：实现 Auth、Conversation、Message API 和最小 React 前端。
+- 阶段 3：通过 `AgentRuntimeAdapter` 接入非流式 Agent turn，持久化 run、event、tool call、tool result 和 assistant message。
 
-## Phase 1 Database Scope
+## Runtime Adapter 边界
 
-- `backend` 使用 MySQL + SQLAlchemy + Alembic 管理 Web 数据库。
-- 所有 Web 用户私有数据表必须包含 `user_id`。
-- Repository 查询 conversation、message、tool、task、memory 时必须显式传入 `user_id` 并校验所有权。
-- Repository 层只处理数据库，不处理 HTTP，也不调用 Agent Runtime。
-- 详细说明见 [backend_database.md](backend_database.md)。
+`backend/app/runtime/agent_adapter.py` 是 backend 中唯一直接 import `codeagent` 的位置。它负责把数据库消息转换为 codeagent history，调用 `agent_loop`，再把新增消息、工具调用和事件转换回 backend 内部类型。
 
-## Phase 2 API Scope
+`backend/app/services/agent_service.py` 负责数据库事务和权限边界。它不重写 Agent Loop，也不把 MySQL 写入 `codeagent`。
 
-- `backend` 提供注册、登录、`/auth/me`、conversation 和 user message API。
-- 鉴权方式为 `Authorization: Bearer <token>`。
-- `frontend` 使用 React + Vite + TypeScript，只通过 `backend` API 访问系统。
-- 阶段 2 不接入 Agent Runtime，不生成 assistant 回复，不实现 SSE/WebSocket。
-- API 说明见 [backend_api.md](backend_api.md)。
+## Workspace 隔离
+
+阶段 3 为每个用户会话创建独立目录：
+
+```text
+.runtime_workspaces/
+  user_<user_id>/
+    conv_<conversation_id>/
+      scratch/
+      uploads/
+      artifacts/
+      traces/
+```
+
+当前目录隔离用于 Web 运行态组织。工具层更细粒度的文件访问限制会在后续阶段增强。

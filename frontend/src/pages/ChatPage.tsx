@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import { runAgentTurn } from '../api/agent';
 import { createConversation, listConversations } from '../api/conversations';
-import { listMessages, sendMessage } from '../api/messages';
+import { listMessages } from '../api/messages';
 import { ChatWindow } from '../components/ChatWindow';
 import { ConversationSidebar } from '../components/ConversationSidebar';
+import type { AgentRunStatus, AgentToolCall } from '../types/agent';
 import type { User } from '../types/auth';
 import type { Conversation } from '../types/conversation';
 import type { Message } from '../types/message';
@@ -16,6 +18,8 @@ export function ChatPage({ user, onLogout }: ChatPageProps) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [runStatus, setRunStatus] = useState<AgentRunStatus | null>(null);
+  const [toolCalls, setToolCalls] = useState<AgentToolCall[]>([]);
   const [error, setError] = useState('');
 
   async function refreshConversations() {
@@ -33,10 +37,16 @@ export function ChatPage({ user, onLogout }: ChatPageProps) {
   useEffect(() => {
     if (!selected) {
       setMessages([]);
+      setRunStatus(null);
+      setToolCalls([]);
       return;
     }
     listMessages(selected.id)
-      .then(setMessages)
+      .then((items) => {
+        setMessages(items);
+        setRunStatus(null);
+        setToolCalls([]);
+      })
       .catch((err) => setError(err instanceof Error ? err.message : 'Load failed'));
   }, [selected?.id]);
 
@@ -47,17 +57,27 @@ export function ChatPage({ user, onLogout }: ChatPageProps) {
   }
 
   async function handleSend(content: string) {
+    setError('');
+    setRunStatus('running');
+    setToolCalls([]);
+    let target = selected;
     if (!selected) {
-      const conversation = await createConversation('New Chat');
-      setConversations((items) => [conversation, ...items]);
-      setSelected(conversation);
-      const message = await sendMessage(conversation.id, content);
-      setMessages([message]);
-      return;
+      target = await createConversation('New Chat');
+      setConversations((items) => [target!, ...items]);
+      setSelected(target);
+      setMessages([]);
     }
-    const message = await sendMessage(selected.id, content);
-    setMessages((items) => [...items, message]);
-    await refreshConversations();
+    try {
+      const response = await runAgentTurn(target!.id, content);
+      setRunStatus(response.status);
+      setToolCalls(response.tool_calls);
+      setMessages((items) => [...items, response.user_message, ...response.assistant_messages]);
+      await refreshConversations();
+    } catch (err) {
+      setRunStatus('failed');
+      setError(err instanceof Error ? err.message : 'Agent run failed');
+      throw err;
+    }
   }
 
   return (
@@ -72,7 +92,13 @@ export function ChatPage({ user, onLogout }: ChatPageProps) {
       />
       <section className="chat-main">
         {error && <div className="error">{error}</div>}
-        <ChatWindow conversation={selected} messages={messages} onSend={handleSend} />
+        <ChatWindow
+          conversation={selected}
+          messages={messages}
+          onSend={handleSend}
+          runStatus={runStatus}
+          toolCalls={toolCalls}
+        />
       </section>
     </main>
   );

@@ -161,6 +161,53 @@ button:disabled {
   padding: 18px 20px;
 }
 
+.chat-title-row {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.run-status,
+.tool-call {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 6px 8px;
+}
+
+.run-status {
+  background: #eef4ff;
+  color: #175cd3;
+}
+
+.run-status.failed,
+.tool-call.failed,
+.tool-call.denied {
+  background: #fff1f0;
+  color: #a8071a;
+}
+
+.run-status.succeeded,
+.tool-call.succeeded {
+  background: #ecfdf3;
+  color: #027a48;
+}
+
+.tool-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.tool-call {
+  background: #f2f4f7;
+  color: #344054;
+}
+
 .message-list {
   display: grid;
   align-content: start;

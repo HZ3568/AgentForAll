@@ -1,51 +1,74 @@
 # Backend Database
 
-The backend database layer is owned by `backend`. It uses MySQL in production, SQLAlchemy 2.x typed ORM models, and Alembic migrations.
+`backend` 拥有 Web 数据库层。生产目标数据库是 MySQL，ORM 使用 SQLAlchemy 2.x，迁移使用 Alembic。`codeagent` 不知道 MySQL、SQLAlchemy、JWT 或 HTTP。
 
-## Ownership Boundary
+## 核心表
 
-- `backend` owns Web users, conversations, messages, run events, tool logs, Web memory, Web tasks, schedules, and uploaded file metadata.
-- `codeagent` does not know about MySQL, SQLAlchemy, Alembic, JWT, or HTTP.
-- Repository code does not call the Agent Runtime.
-- A later adapter layer will translate backend conversation rows into `codeagent` history messages when the Agent API is introduced.
-- Phase 2 authentication and conversation/message APIs still stay inside `backend`; they do not import or call `codeagent`.
+- `users`：Web 用户、角色和状态。
+- `conversations`：按 `user_id` 隔离的会话。
+- `messages`：会话内有序消息，使用 `sequence_no` 保持顺序。
+- `agent_runs`：一次 Agent turn 的运行状态。
+- `run_events`：运行生命周期和关键事件。
+- `tool_calls`：Agent 运行中的工具调用摘要。
+- `tool_results`：工具调用结果，通过 `tool_call_id` 关联。
+- `memories`：Web 层 memory 记录，不直接复用 CLI 的 `.memory/MEMORY.md`。
+- `tasks`、`scheduled_jobs`：Web 层任务和计划。
+- `workspace_files`：后续文件上传和工作区文件元数据。
 
-## Core Tables
+## 关系
 
-- `users` stores authentication-ready user records.
-- `conversations` groups Web chat sessions by `user_id`.
-- `messages` stores ordered conversation messages with `sequence_no`.
-- `agent_runs`, `run_events`, `tool_calls`, and `tool_results` store execution state and audit trails.
-- `memories` stores Web-layer memory records; it does not reuse `.memory/MEMORY.md`.
-- `tasks` and `scheduled_jobs` store Web-layer planning state.
-- `workspace_files` stores metadata for files managed by the backend.
+```text
+users 1 -> n conversations
+conversations 1 -> n messages
+conversations 1 -> n agent_runs
+agent_runs 1 -> n run_events
+agent_runs 1 -> n tool_calls
+tool_calls 1 -> 1 tool_results
+```
 
-## User Isolation
+`messages.input_for_runs` 通过 `agent_runs.input_message_id` 关联一次运行的用户输入。
 
-All user-private tables include `user_id`. Repository methods for conversations and messages must receive `user_id` and filter by it explicitly.
+## 用户隔离
 
-Required patterns:
+所有用户私有表都必须能绑定 `user_id`。Repository 必须使用以下模式：
 
 - `ConversationRepository.get_for_user(conversation_id, user_id)`
 - `MessageRepository.list_for_conversation(user_id, conversation_id)`
-- `MessageRepository.create_message(...)` must verify the conversation belongs to `user_id` before writing.
+- `AgentRunRepository.get_for_user(run_id, user_id)`
+- `RunEventRepository.list_for_run(user_id, run_id)`
+- `ToolCallRepository.list_for_run(user_id, run_id)`
+- `ToolResultRepository` 通过 `tool_calls.user_id` 校验所有权。
 
-Do not add repository methods that read private data by `conversation_id` alone.
+不要新增只按 `conversation_id` 或 `run_id` 读取用户私有数据的方法。
 
-Phase 2 API routes map missing ownership to `404` so another user cannot infer whether an object exists.
+## Agent Turn 持久化
 
-## Migrations
+一次非流式 Agent turn 的写入顺序：
 
-Run Alembic from the repository root:
+1. 校验 conversation 属于当前用户。
+2. 写入 `role=user` message。
+3. 创建 `agent_runs`，从 `queued` 标记到 `running`。
+4. 写入 `run_started`。
+5. 调用 runtime adapter。
+6. 写入 assistant message。
+7. 写入 adapter 返回的 events、tool calls、tool results。
+8. 成功时写入 `run_finished` 并标记 `succeeded`。
+9. 失败时写入 `run_failed` 并标记 `failed`。
+
+Agent 失败不会回滚已经创建的 user message 和 failed run。
+
+## Alembic
+
+从仓库根目录运行：
 
 ```bash
 alembic -c backend/alembic.ini upgrade head
 ```
 
-For local migration checks without MySQL, override `DATABASE_URL`:
+本地没有 MySQL 时可以临时覆盖：
 
 ```bash
 DATABASE_URL=sqlite:///./backend_alembic_check.db alembic -c backend/alembic.ini upgrade head
 ```
 
-Production table creation must use Alembic. `Base.metadata.create_all()` is allowed only inside tests for temporary databases.
+生产建表必须使用 Alembic。`Base.metadata.create_all()` 只允许在测试临时数据库中使用。

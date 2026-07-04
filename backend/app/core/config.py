@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "dev-only-change-me"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    WORKSPACE_ROOT: str = ".runtime_workspaces"
     CORS_ORIGINS: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [
             "http://localhost:5173",

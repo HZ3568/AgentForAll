@@ -17,6 +17,9 @@ from codeagent.tasks.background import call_tool_handler
 from codeagent.tools.results import ToolResult, format_tool_result, is_tool_failure
 from codeagent.tools.registry import build_tool_pool
 
+TODO_TOOL_NAMES = {"todo_write", "todo_set"}
+COMPACT_TOOL_NAMES = {"compact", "context_compact"}
+
 
 def build_user_content(runtime: Any, results: list[dict]) -> list[dict]:
     content = list(results)
@@ -30,7 +33,7 @@ def record_tool_observation(runtime: Any, tool_name: str, output: Any) -> str:
         runtime.tools_used.append(tool_name)
 
     if isinstance(output, ToolResult):
-        if output.ok and tool_name != "todo_write":
+        if output.ok and tool_name not in TODO_TOOL_NAMES:
             runtime.evidence.extend(output.evidence)
         elif not output.ok:
             runtime.tool_errors.append(
@@ -175,7 +178,7 @@ def agent_loop(runtime: Any, messages: list, context: dict) -> None:
             if block.type != "tool_use":
                 continue
             print(f"\033[36m> {block.name}\033[0m")
-            if block.name == "compact":
+            if block.name in COMPACT_TOOL_NAMES:
                 messages[:] = compact_history(runtime, messages)
                 messages.append(
                     {
@@ -217,7 +220,7 @@ def agent_loop(runtime: Any, messages: list, context: dict) -> None:
             output_content = record_tool_observation(runtime, block.name, output)
             print(output_content[:300])
 
-            if block.name == "todo_write":
+            if block.name in TODO_TOOL_NAMES:
                 runtime.rounds_since_todo = 0
             else:
                 runtime.rounds_since_todo += 1

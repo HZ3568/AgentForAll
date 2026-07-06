@@ -12,6 +12,8 @@ from codeagent.core.context import (
 )
 from codeagent.core.llm import RecoveryState, is_prompt_too_long_error
 from codeagent.core.loop import (
+    COMPACT_TOOL_NAMES,
+    TODO_TOOL_NAMES,
     build_user_content,
     inject_background_notifications,
     record_tool_observation,
@@ -130,7 +132,7 @@ def agent_loop_streaming(
                 continue
             tool_name = str(_block_value(block, "name") or "unknown_tool")
             print(f"\033[36m> {tool_name}\033[0m")
-            if tool_name == "compact":
+            if tool_name in COMPACT_TOOL_NAMES:
                 messages[:] = compact_history(runtime, messages)
                 messages.append(
                     {
@@ -191,7 +193,7 @@ def agent_loop_streaming(
                     _tool_status(output, output_content),
                 )
 
-            if tool_name == "todo_write":
+            if tool_name in TODO_TOOL_NAMES:
                 runtime.rounds_since_todo = 0
             else:
                 runtime.rounds_since_todo += 1

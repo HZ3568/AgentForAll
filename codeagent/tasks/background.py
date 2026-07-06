@@ -5,6 +5,8 @@ from typing import Any, Callable
 
 from codeagent.tools.results import format_tool_result
 
+SHELL_TOOL_NAMES = {"bash", "shell_run"}
+
 
 def call_tool_handler(handler: Callable[..., Any] | None, args: dict, name: str) -> Any:
     if not handler:
@@ -23,14 +25,14 @@ class BackgroundManager:
         self.lock = threading.Lock()
 
     def is_slow_operation(self, tool_name: str, tool_input: dict) -> bool:
-        if tool_name != "bash":
+        if tool_name not in SHELL_TOOL_NAMES:
             return False
         command = tool_input.get("command", "").lower()
         keywords = ["install", "build", "test", "deploy", "compile", "docker build", "pip install", "npm install", "cargo build", "pytest", "make"]
         return any(keyword in command for keyword in keywords)
 
     def should_run(self, tool_name: str, tool_input: dict) -> bool:
-        if tool_name != "bash":
+        if tool_name not in SHELL_TOOL_NAMES:
             return False
         return bool(tool_input.get("run_in_background")) or self.is_slow_operation(tool_name, tool_input)
 

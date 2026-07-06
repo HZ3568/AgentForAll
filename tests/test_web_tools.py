@@ -12,11 +12,14 @@ def test_web_tools_are_registered():
     names = {tool["name"] for tool in BUILTIN_TOOLS}
     assert {
         "web_search",
-        "fetch_url",
-        "pdf_extract",
-        "read_spreadsheet",
-        "extract_pdf_tables",
+        "web_fetch",
+        "pdf_extract_text",
+        "spreadsheet_read",
+        "pdf_extract_tables",
     } <= names
+    assert "fetch_url" not in names
+    assert "pdf_extract" not in names
+    assert "read_spreadsheet" not in names
 
 
 def test_html_to_text_removes_scripts():

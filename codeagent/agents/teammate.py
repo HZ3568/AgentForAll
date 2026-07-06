@@ -9,20 +9,20 @@ from typing import Any
 
 from codeagent.core.context import extract_text, has_tool_use
 from codeagent.tasks.background import call_tool_handler
-from codeagent.tools.basic import run_bash, run_read, run_write
+from codeagent.tools.workspace.filesystem import run_bash, run_read, run_write
 
 IDLE_POLL_INTERVAL = 5
 IDLE_TIMEOUT = 60
 
 TEAMMATE_TOOLS = [
-    {"name": "bash", "description": "Run a shell command.", "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}},
-    {"name": "read_file", "description": "Read file.", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "limit": {"type": "integer"}, "offset": {"type": "integer"}}, "required": ["path"]}},
-    {"name": "write_file", "description": "Write file.", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}},
-    {"name": "send_message", "description": "Send message to another agent.", "input_schema": {"type": "object", "properties": {"to": {"type": "string"}, "content": {"type": "string"}}, "required": ["to", "content"]}},
+    {"name": "shell_run", "description": "Run a shell command.", "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}},
+    {"name": "file_read", "description": "Read file.", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "limit": {"type": "integer"}, "offset": {"type": "integer"}}, "required": ["path"]}},
+    {"name": "file_write", "description": "Write file.", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}},
+    {"name": "teammate_send", "description": "Send message to another agent.", "input_schema": {"type": "object", "properties": {"to": {"type": "string"}, "content": {"type": "string"}}, "required": ["to", "content"]}},
     {"name": "submit_plan", "description": "Submit a plan for Lead approval.", "input_schema": {"type": "object", "properties": {"plan": {"type": "string"}}, "required": ["plan"]}},
-    {"name": "list_tasks", "description": "List all tasks.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "claim_task", "description": "Claim a pending task.", "input_schema": {"type": "object", "properties": {"task_id": {"type": "string"}}, "required": ["task_id"]}},
-    {"name": "complete_task", "description": "Mark an in-progress task as completed.", "input_schema": {"type": "object", "properties": {"task_id": {"type": "string"}}, "required": ["task_id"]}},
+    {"name": "task_list", "description": "List all tasks.", "input_schema": {"type": "object", "properties": {}, "required": []}},
+    {"name": "task_claim", "description": "Claim a pending task.", "input_schema": {"type": "object", "properties": {"task_id": {"type": "string"}}, "required": ["task_id"]}},
+    {"name": "task_complete", "description": "Mark an in-progress task as completed.", "input_schema": {"type": "object", "properties": {"task_id": {"type": "string"}}, "required": ["task_id"]}},
 ]
 
 
@@ -88,14 +88,14 @@ def spawn_teammate_thread(runtime: Any, name: str, role: str, prompt: str) -> st
             return result
 
         handlers = {
-            "bash": lambda command: run_bash(command, cwd()),
-            "read_file": lambda path, limit=None, offset=0: run_read(path, cwd(), limit, offset),
-            "write_file": lambda path, content: run_write(path, content, cwd()),
-            "send_message": lambda to, content: (runtime.bus.send(name, to, content), "Sent")[1],
+            "shell_run": lambda command: run_bash(command, cwd()),
+            "file_read": lambda path, limit=None, offset=0: run_read(path, cwd(), limit, offset),
+            "file_write": lambda path, content: run_write(path, content, cwd()),
+            "teammate_send": lambda to, content: (runtime.bus.send(name, to, content), "Sent")[1],
             "submit_plan": lambda plan: runtime.protocols.submit_plan_from_teammate(name, plan),
-            "list_tasks": lambda: runtime.tasks.render_list(),
-            "claim_task": claim_task,
-            "complete_task": complete_task,
+            "task_list": lambda: runtime.tasks.render_list(),
+            "task_claim": claim_task,
+            "task_complete": complete_task,
         }
         messages = [{"role": "user", "content": prompt}]
         should_shutdown = False

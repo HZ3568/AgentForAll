@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from codeagent.tools.basic import safe_path
+from codeagent.tools.workspace.filesystem import safe_path
 
 DENY_LIST = ["rm -rf /", "sudo", "shutdown", "reboot", "mkfs", "dd if="]
 DESTRUCTIVE = ["rm ", "> /etc/", "chmod 777", "rmdir"]
 WINDOWS_LINUX_ONLY = ["xargs", "grep -R", "find . -type f", "sed -i", "awk "]
+SHELL_TOOL_NAMES = {"bash", "shell_run"}
+WRITE_TOOL_NAMES = {"write_file", "edit_file", "file_write", "file_edit"}
 
 
 # PreToolUse: 权限检查
@@ -16,7 +18,7 @@ def make_permission_hook(runtime: Any):
         block_input = getattr(block, "input", None) or {}
         print("[permission-debug] hook called")
         print(f"[permission-debug] block.name={block_name}")
-        if block_name == "bash":
+        if block_name in SHELL_TOOL_NAMES:
             command = block_input.get("command", "")
             print(f"[permission-debug] command={command!r}")
             for pattern in DENY_LIST:
@@ -30,7 +32,8 @@ def make_permission_hook(runtime: Any):
                 if hit:
                     return (
                         f"Shell command blocked on Windows because it uses '{hit}'. "
-                        "Use list_dir, find_files, search_text, or a Python script instead."
+                        "Use dir_list/list_dir, file_find/find_files, "
+                        "text_search/search_text, or a Python script instead."
                     )
             destructive_hits = [token for token in DESTRUCTIVE if token in command]
             print(f"[permission-debug] destructive hits={destructive_hits!r}")
@@ -40,7 +43,7 @@ def make_permission_hook(runtime: Any):
                 choice = input("  Allow? [y/N] ").strip().lower()
                 if choice not in ("y", "yes"):
                     return "Permission denied by user"
-        if block_name in ("write_file", "edit_file"):
+        if block_name in WRITE_TOOL_NAMES:
             path = block_input.get("path", "")
             try:
                 safe_path(path, runtime.settings.workdir)

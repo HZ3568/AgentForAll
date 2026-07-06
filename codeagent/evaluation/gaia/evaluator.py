@@ -465,14 +465,20 @@ class GAIAEvaluator:
             return FailureType.WEB_SEARCH_BLOCKED.value
         if "empty_search_results" in error_types and any(tool == "web_search" for tool in tools):
             return FailureType.WEB_SEARCH_EMPTY.value
-        if any(tool == "fetch_url" for tool in tools):
+        if any(tool in {"fetch_url", "web_fetch"} for tool in tools):
             return FailureType.FETCH_FAILED.value
         file_tools = {
             "read_file",
+            "file_read",
             "read_spreadsheet",
+            "spreadsheet_read",
             "pdf_extract",
+            "pdf_extract_text",
             "extract_pdf_text",
             "extract_pdf_tables",
+            "pdf_extract_tables",
+            "audio_transcribe",
+            "image_ocr",
         }
         if any(
             err

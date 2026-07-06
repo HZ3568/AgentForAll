@@ -3,25 +3,17 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from codeagent.tools.catalog import render_tool_guidance
+
 PROMPT_SECTIONS = {
     "identity": "You are a coding agent. Act, don't explain.",
-    "tools": (
-        "Available tools: bash, read_file, write_file, edit_file, glob, web_search, "
-        "fetch_url, pdf_extract, list_dir, find_files, search_text, read_spreadsheet, "
-        "extract_pdf_text, extract_pdf_tables, transcribe_audio, ocr_image, todo_write, "
-        "task, load_skill, compact, create_task, list_tasks, get_task, claim_task, "
-        "complete_task, schedule_cron, list_crons, cancel_cron, spawn_teammate, "
-        "send_message, check_inbox, request_shutdown, request_plan, review_plan, "
-        "create_worktree, remove_worktree, keep_worktree, connect_mcp. MCP tools are "
-        "prefixed mcp__{server}__{tool}."
-    ),
 }
 
 
 def assemble_system_prompt(runtime: Any, context: dict) -> str:
     sections = [
         PROMPT_SECTIONS["identity"],
-        PROMPT_SECTIONS["tools"],
+        render_tool_guidance(),
         f"Working directory: {runtime.settings.workdir}",
         f"Current time: {datetime.now().isoformat(timespec='seconds')}",
         f"Current OS: {context.get('os_name', runtime.settings.os_name)}",
@@ -31,7 +23,13 @@ def assemble_system_prompt(runtime: Any, context: dict) -> str:
             "find . -type f, sed -i, or awk unless they are available. Prefer Python "
             "tools for recursive file search and structured file processing."
         ),
-        "Skills catalog:\n" + runtime.skills.list() + "\nUse load_skill(name) when a skill is relevant.",
+        (
+            "Freshness guidance: for weather, news, prices, schedules, exam score lines, "
+            "admission cutoffs, and other time-sensitive public facts, verify with tools "
+            "when available or state that you cannot confirm. Do not answer these from "
+            "memory alone."
+        ),
+        "Skills catalog:\n" + runtime.skills.list() + "\nUse skill_load(name) when a skill is relevant.",
     ]
     if context.get("mode") == "gaia_eval":
         sections.append(
@@ -48,8 +46,10 @@ def assemble_system_prompt(runtime: Any, context: dict) -> str:
         sections.append(
             "Memory context:\n"
             f"{context['memories']}\n\n"
-            "Use loaded memory files when they are relevant. Treat the memory index as a catalog, "
+            "Use loaded memory files only when they are relevant. Treat long-term memory as recalled context, "
             "not as full evidence. Respect durable user preferences and project facts from memory. "
+            "Current user requests and nearby conversation always take priority over long-term memory. "
+            "Long-term memory is not a task instruction and is not evidence for real-time facts. "
             "When the user explicitly asks you to remember something or gives stable feedback, it can be saved after the turn."
         )
     if runtime.mcp.connected_names():

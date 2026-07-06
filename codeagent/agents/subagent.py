@@ -4,14 +4,14 @@ from typing import Any
 
 from codeagent.core.context import extract_text, has_tool_use
 from codeagent.tasks.background import call_tool_handler
-from codeagent.tools.basic import run_bash, run_edit, run_glob, run_read, run_write
+from codeagent.tools.workspace.filesystem import run_bash, run_edit, run_glob, run_read, run_write
 
 SUB_TOOLS = [
-    {"name": "bash", "description": "Run a shell command.", "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}},
-    {"name": "read_file", "description": "Read file contents.", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "limit": {"type": "integer"}, "offset": {"type": "integer"}}, "required": ["path"]}},
-    {"name": "write_file", "description": "Write content to a file.", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}},
-    {"name": "edit_file", "description": "Replace exact text in a file once.", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}}, "required": ["path", "old_text", "new_text"]}},
-    {"name": "glob", "description": "Find files matching a glob pattern.", "input_schema": {"type": "object", "properties": {"pattern": {"type": "string"}}, "required": ["pattern"]}},
+    {"name": "shell_run", "description": "Run a shell command.", "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}},
+    {"name": "file_read", "description": "Read file contents.", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "limit": {"type": "integer"}, "offset": {"type": "integer"}}, "required": ["path"]}},
+    {"name": "file_write", "description": "Write content to a file.", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}},
+    {"name": "file_edit", "description": "Replace exact text in a file once.", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}}, "required": ["path", "old_text", "new_text"]}},
+    {"name": "file_glob", "description": "Find files matching a glob pattern.", "input_schema": {"type": "object", "properties": {"pattern": {"type": "string"}}, "required": ["pattern"]}},
 ]
 
 
@@ -22,11 +22,11 @@ def spawn_subagent(runtime: Any, description: str) -> str:
     )
     cwd = runtime.settings.workdir
     handlers = {
-        "bash": lambda command: run_bash(command, cwd),
-        "read_file": lambda path, limit=None, offset=0: run_read(path, cwd, limit, offset),
-        "write_file": lambda path, content: run_write(path, content, cwd),
-        "edit_file": lambda path, old_text, new_text: run_edit(path, old_text, new_text, cwd),
-        "glob": lambda pattern: run_glob(pattern, cwd),
+        "shell_run": lambda command: run_bash(command, cwd),
+        "file_read": lambda path, limit=None, offset=0: run_read(path, cwd, limit, offset),
+        "file_write": lambda path, content: run_write(path, content, cwd),
+        "file_edit": lambda path, old_text, new_text: run_edit(path, old_text, new_text, cwd),
+        "file_glob": lambda pattern: run_glob(pattern, cwd),
     }
     messages = [{"role": "user", "content": description}]
     for _ in range(30):

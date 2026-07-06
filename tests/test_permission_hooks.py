@@ -58,3 +58,17 @@ def test_windows_linux_only_command_is_blocked(tmp_path):
     assert result is not None
     assert "blocked on Windows" in result
     assert "find_files" in result
+
+
+def test_windows_linux_only_command_is_blocked_for_shell_run(tmp_path):
+    runtime = SimpleNamespace(settings=SimpleNamespace(workdir=tmp_path, os_name="Windows"))
+    block = SimpleNamespace(
+        name="shell_run",
+        input={"command": "find . -type f | xargs grep hello"},
+    )
+
+    result = make_permission_hook(runtime)(block)
+
+    assert result is not None
+    assert "blocked on Windows" in result
+    assert "file_find" in result

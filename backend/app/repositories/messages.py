@@ -75,6 +75,27 @@ class MessageRepository:
         )
         return list(self.db.scalars(stmt))
 
+    def list_recent_before_sequence(
+        self,
+        user_id: str,
+        conversation_id: str,
+        before_sequence_no: int,
+        limit: int = 500,
+    ) -> list[Message]:
+        if not self._conversation_exists_for_user(user_id, conversation_id):
+            return []
+        stmt = (
+            select(Message)
+            .where(
+                Message.user_id == user_id,
+                Message.conversation_id == conversation_id,
+                Message.sequence_no < before_sequence_no,
+            )
+            .order_by(Message.sequence_no.desc())
+            .limit(limit)
+        )
+        return list(reversed(list(self.db.scalars(stmt))))
+
     def get_for_user(self, message_id: str, user_id: str) -> Message | None:
         return self.db.scalar(
             select(Message).where(

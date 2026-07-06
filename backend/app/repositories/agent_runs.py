@@ -97,3 +97,20 @@ class AgentRunRepository:
             .order_by(AgentRun.created_at.asc())
         )
         return list(self.db.scalars(stmt))
+
+    def list_for_conversation(
+        self,
+        user_id: str,
+        conversation_id: str,
+        limit: int = 10,
+    ) -> list[AgentRun]:
+        stmt = (
+            select(AgentRun)
+            .where(
+                AgentRun.user_id == user_id,
+                AgentRun.conversation_id == conversation_id,
+            )
+            .order_by(AgentRun.created_at.desc())
+            .limit(limit)
+        )
+        return list(self.db.scalars(stmt))

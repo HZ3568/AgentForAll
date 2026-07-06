@@ -1,5 +1,11 @@
 import { apiRequest } from './client';
-import type { Conversation, ConversationListResponse } from '../types/conversation';
+import type {
+  Conversation,
+  ConversationListResponse,
+  MemoryIndexResponse,
+  WorkspaceFile,
+  WorkspaceFileListResponse,
+} from '../types/conversation';
 
 export async function listConversations(): Promise<Conversation[]> {
   const response = await apiRequest<ConversationListResponse>('/conversations');
@@ -22,4 +28,14 @@ export async function updateConversationTitle(id: string, title: string): Promis
 
 export async function deleteConversation(id: string): Promise<void> {
   await apiRequest<void>(`/conversations/${id}`, { method: 'DELETE' });
+}
+
+export async function listWorkspaceFiles(conversationId: string): Promise<WorkspaceFile[]> {
+  const response = await apiRequest<WorkspaceFileListResponse>(`/conversations/${conversationId}/workspace-files`);
+  return response.items;
+}
+
+export async function getMemoryIndex(conversationId: string): Promise<string | null> {
+  const response = await apiRequest<MemoryIndexResponse>(`/conversations/${conversationId}/memory-index`);
+  return response.content;
 }

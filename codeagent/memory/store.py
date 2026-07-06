@@ -11,6 +11,53 @@ import yaml
 MEMORY_TYPES = {"user", "feedback", "project", "reference"}
 DEFAULT_CONSOLIDATE_THRESHOLD = 10
 DEFAULT_MAX_SELECTED = 5
+MEMORY_WRITE_SIGNAL_PATTERNS = [
+    r"\bremember\b",
+    r"\bmemorize\b",
+    r"\bpreference\b",
+    r"\bprefers?\b",
+    r"\bfrom now on\b",
+    r"\bin future\b",
+    r"\balways\b",
+    r"\bnever\b",
+    r"记住",
+    r"以后",
+    r"下次",
+    r"偏好",
+    r"习惯",
+    r"规则",
+    r"约定",
+    r"规范",
+    r"默认",
+    r"总是",
+    r"不要",
+    r"必须",
+]
+TRANSIENT_TASK_MEMORY_PATTERNS = [
+    r"\buser requested\b",
+    r"\bthe user asked\b",
+    r"\basked for\b",
+    r"\brequested implementation\b",
+    r"\bimplementation successfully\b",
+    r"\bsuccessfully compiled\b",
+    r"\btests? passed\b",
+    r"\bbasic tests\b",
+    r"\bcompleted\b.*\bimplementation\b",
+    r"请求.*实现",
+    r"要求.*实现",
+    r"用户.*请求",
+    r"已完成",
+    r"通过编译",
+    r"编译.*通过",
+    r"测试.*通过",
+]
+
+
+def looks_like_transient_task_memory(text: str) -> bool:
+    return any(
+        re.search(pattern, text, flags=re.IGNORECASE | re.UNICODE)
+        for pattern in TRANSIENT_TASK_MEMORY_PATTERNS
+    )
 
 
 class MemoryStore:
@@ -281,20 +328,20 @@ class MemoryStore:
         index_limit: int = 4000,
         max_items: int = DEFAULT_MAX_SELECTED,
     ) -> str:
-        index = self.read_index(index_limit)
+        del index_limit
         relevant = self.load_relevant_memories(messages, client, model, max_items)
-        parts: list[str] = []
-        if index:
-            parts.append("Memory index:\n" + index)
-        if relevant:
-            parts.append("Loaded memory files:\n" + relevant)
-        return "\n\n".join(parts)
+        if not relevant:
+            return ""
+        return "Loaded memory files:\n" + relevant
 
     def extract_new_memories(self, messages: list, client: Any | None, model: str | None) -> int:
         if client is None or not model:
             return 0
 
         normalized = self.snapshot_messages(messages)[-10:]
+        if not self._has_memory_write_signal(normalized):
+            return 0
+
         dialogue = "\n".join(f"{msg['role']}: {msg['content']}" for msg in normalized)
         if not dialogue.strip():
             return 0
@@ -335,10 +382,26 @@ class MemoryStore:
             mem_type = str(item.get("type") or "user")
             description = str(item.get("description") or "").strip()
             body = str(item.get("body") or "").strip()
-            if description and body:
+            if self._is_valid_extracted_memory(description, body):
                 self.write_memory_file(name, mem_type, description, body)
                 count += 1
         return count
+
+    def _has_memory_write_signal(self, messages: list[dict[str, str]]) -> bool:
+        user_text = "\n".join(
+            msg["content"] for msg in messages if msg.get("role") == "user"
+        )
+        if not user_text.strip():
+            return False
+        return any(
+            re.search(pattern, user_text, flags=re.IGNORECASE | re.UNICODE)
+            for pattern in MEMORY_WRITE_SIGNAL_PATTERNS
+        )
+
+    def _is_valid_extracted_memory(self, description: str, body: str) -> bool:
+        if not description or not body:
+            return False
+        return not looks_like_transient_task_memory(f"{description}\n{body}")
 
     def consolidate_memories(self, client: Any | None, model: str | None) -> tuple[int, int] | None:
         files = self.list_memory_files()

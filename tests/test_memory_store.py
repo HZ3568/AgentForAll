@@ -56,13 +56,19 @@ def test_memory_store_can_use_external_memory_dir(tmp_path: Path):
     assert "Shared user memory." in store.build_context([{"role": "user", "content": "shared"}])
 
 
-def test_build_context_loads_llm_selected_memory(tmp_path: Path):
+def test_build_context_loads_only_llm_selected_memory(tmp_path: Path):
     store = MemoryStore(tmp_path)
     store.write_memory_file(
         "project-api",
         "project",
         "The API module owns request validation.",
         "Keep request validation changes in `api/`.",
+    )
+    store.write_memory_file(
+        "segment-tree",
+        "project",
+        "Segment tree implementation details.",
+        "This unrelated memory must not be injected.",
     )
     client = FakeClient(["[0]"])
 
@@ -72,9 +78,10 @@ def test_build_context_loads_llm_selected_memory(tmp_path: Path):
         model="fake-model",
     )
 
-    assert "Memory index:" in context
     assert "<relevant_memories>" in context
     assert "Keep request validation changes in `api/`." in context
+    assert "Memory index:" not in context
+    assert "Segment tree implementation details." not in context
 
 
 def test_llm_empty_selection_does_not_keyword_fallback(tmp_path: Path):
@@ -93,8 +100,58 @@ def test_llm_empty_selection_does_not_keyword_fallback(tmp_path: Path):
         model="fake-model",
     )
 
-    assert "Memory index:" in context
-    assert "<relevant_memories>" not in context
+    assert context == ""
+
+
+def test_build_context_does_not_inject_unrelated_memory_index(tmp_path: Path):
+    store = MemoryStore(tmp_path)
+    store.write_memory_file(
+        "segment-tree-request",
+        "user",
+        "User requested C++ implementation of segment tree with correctness testing.",
+        "The user asked for segment tree implementation and tests.",
+    )
+    client = FakeClient(["[]"])
+
+    context = store.build_context(
+        [{"role": "user", "content": "帮我查一下济南今晚八点是否下雨?"}],
+        client=client,
+        model="fake-model",
+    )
+
+    assert context == ""
+    assert "segment" not in context.lower()
+
+
+def test_extract_new_memories_ignores_transient_task_dialogue(tmp_path: Path):
+    store = MemoryStore(tmp_path)
+    client = FakeClient(
+        [
+            """
+            [
+              {
+                "name": "segment-tree-request",
+                "type": "user",
+                "description": "User requested C++ implementation of segment tree.",
+                "body": "The user asked for a segment tree implementation."
+              }
+            ]
+            """
+        ]
+    )
+
+    count = store.extract_new_memories(
+        [
+            {"role": "user", "content": "请用 C++ 实现线段树并测试正确性"},
+            {"role": "assistant", "content": "已完成 segment_tree.cpp 并通过编译测试。"},
+        ],
+        client=client,
+        model="fake-model",
+    )
+
+    assert count == 0
+    assert client.messages.prompts == []
+    assert not (tmp_path / ".memory").exists()
 
 
 def test_read_index_rebuilds_missing_index(tmp_path: Path):

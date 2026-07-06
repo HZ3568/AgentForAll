@@ -43,3 +43,19 @@ class ConversationRead(BaseModel):
 
 class ConversationListResponse(BaseModel):
     items: list[ConversationRead]
+
+
+class WorkspaceFileRead(BaseModel):
+    relative_path: str
+    section: str
+    filename: str
+    size_bytes: int
+    updated_at: datetime
+
+
+class WorkspaceFileListResponse(BaseModel):
+    items: list[WorkspaceFileRead]
+
+
+class MemoryIndexResponse(BaseModel):
+    content: str | None = None

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { apiUrl, getToken } from '../api/client';
 import type { RunEvent } from '../types/run';
+import { parseSseFrame } from '../utils/sseParser';
 
 interface UseRunEventsOptions {
   enabled: boolean;
@@ -26,45 +27,54 @@ export function useRunEvents(runId: string | null, options: UseRunEventsOptions)
 
     const abortController = new AbortController();
     let buffer = '';
-    const afterSequenceNo = options.afterSequenceNo ?? lastSequenceNoRef.current;
-    const after = afterSequenceNo ? `?after_sequence_no=${afterSequenceNo}` : '';
+    let attempts = 0;
 
     async function connect() {
       try {
-        const token = getToken();
-        const headers = new Headers();
-        if (token) {
-          headers.set('Authorization', `Bearer ${token}`);
-        }
-        const response = await fetch(apiUrl(`/agent/runs/${runId}/events/stream${after}`), {
-          headers,
-          signal: abortController.signal,
-        });
-        if (!response.ok || !response.body) {
-          throw new Error(`Event stream failed with ${response.status}`);
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            break;
+        while (!abortController.signal.aborted) {
+          const afterSequenceNo = optionsRef.current.afterSequenceNo ?? lastSequenceNoRef.current;
+          const after = afterSequenceNo ? `?after_sequence_no=${afterSequenceNo}` : '';
+          const token = getToken();
+          const headers = new Headers();
+          if (token) {
+            headers.set('Authorization', `Bearer ${token}`);
           }
-          buffer += decoder.decode(value, { stream: true });
-          const frames = buffer.split(/\r?\n\r?\n/);
-          buffer = frames.pop() ?? '';
-          for (const frame of frames) {
-            const event = parseSseFrame(frame);
-            if (event) {
-              lastSequenceNoRef.current = Math.max(lastSequenceNoRef.current, event.sequence_no);
-              optionsRef.current.onEvent(event);
+          const response = await fetch(apiUrl(`/agent/runs/${runId}/events/stream${after}`), {
+            headers,
+            signal: abortController.signal,
+          });
+          if (!response.ok || !response.body) {
+            throw new Error(`Event stream failed with ${response.status}`);
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+              break;
+            }
+            buffer += decoder.decode(value, { stream: true });
+            const frames = buffer.split(/\r?\n\r?\n/);
+            buffer = frames.pop() ?? '';
+            for (const frame of frames) {
+              const event = parseSseFrame(frame);
+              if (event) {
+                lastSequenceNoRef.current = Math.max(lastSequenceNoRef.current, event.sequence_no);
+                optionsRef.current.onEvent(event);
+              }
             }
           }
+          optionsRef.current.onDone?.();
+          return;
         }
-        optionsRef.current.onDone?.();
       } catch (error) {
         if (!abortController.signal.aborted) {
+          attempts += 1;
+          if (attempts <= 3) {
+            await delay(400 * attempts);
+            return connect();
+          }
           optionsRef.current.onError?.(error instanceof Error ? error : new Error('Event stream failed'));
         }
       }
@@ -75,19 +85,8 @@ export function useRunEvents(runId: string | null, options: UseRunEventsOptions)
   }, [runId, options.enabled, options.afterSequenceNo]);
 }
 
-function parseSseFrame(frame: string): RunEvent | null {
-  const dataLines: string[] = [];
-  for (const line of frame.split(/\r?\n/)) {
-    if (line.startsWith('data:')) {
-      dataLines.push(line.slice(5).trimStart());
-    }
-  }
-  if (dataLines.length === 0) {
-    return null;
-  }
-  const data = JSON.parse(dataLines.join('\n')) as RunEvent | { event_type?: string };
-  if (data.event_type === 'heartbeat') {
-    return null;
-  }
-  return data as RunEvent;
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }

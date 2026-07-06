@@ -52,6 +52,7 @@ class AgentRunCreateServiceResult:
     run: AgentRun
     user_message: Message
     events_url: str
+    web_search_enabled: bool = False
 
 
 @dataclass(slots=True)
@@ -78,6 +79,7 @@ class AgentService:
         user_id: str,
         conversation_id: str,
         content: str,
+        web_search_enabled: bool = False,
     ) -> AgentRunCreateServiceResult:
         conversation = ConversationRepository(self.db).get_active_for_user(conversation_id, user_id)
         if conversation is None:
@@ -130,15 +132,26 @@ class AgentService:
                 run=run,
                 user_message=user_message,
                 events_url=f"/api/v1/agent/runs/{run.id}/events/stream",
+                web_search_enabled=web_search_enabled,
             )
 
-    def execute_run(self, *, user_id: str, run_id: str) -> AgentTurnServiceResult:
+    def execute_run(
+        self,
+        *,
+        user_id: str,
+        run_id: str,
+        web_search_enabled: bool = False,
+    ) -> AgentTurnServiceResult:
         run = AgentRunRepository(self.db).get_for_user(run_id, user_id)
         if run is None:
             raise AgentRunNotFound("Run not found.")
 
         with self.session_manager.conversation_lock(user_id, run.conversation_id):
-            return self._execute_run_locked(user_id=user_id, run_id=run_id)
+            return self._execute_run_locked(
+                user_id=user_id,
+                run_id=run_id,
+                web_search_enabled=web_search_enabled,
+            )
 
     def run_turn(
         self,
@@ -146,10 +159,20 @@ class AgentService:
         user_id: str,
         conversation_id: str,
         content: str,
+        web_search_enabled: bool = False,
     ) -> AgentTurnServiceResult:
-        created = self.create_run(user_id=user_id, conversation_id=conversation_id, content=content)
+        created = self.create_run(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            content=content,
+            web_search_enabled=web_search_enabled,
+        )
         try:
-            return self.execute_run(user_id=user_id, run_id=created.run.id)
+            return self.execute_run(
+                user_id=user_id,
+                run_id=created.run.id,
+                web_search_enabled=web_search_enabled,
+            )
         except AgentTurnExecutionError:
             raise
         except Exception as exc:
@@ -186,7 +209,13 @@ class AgentService:
         self.db.refresh(run)
         return run
 
-    def _execute_run_locked(self, *, user_id: str, run_id: str) -> AgentTurnServiceResult:
+    def _execute_run_locked(
+        self,
+        *,
+        user_id: str,
+        run_id: str,
+        web_search_enabled: bool = False,
+    ) -> AgentTurnServiceResult:
         run_repo = AgentRunRepository(self.db)
         message_repo = MessageRepository(self.db)
         run = run_repo.get_for_user(run_id, user_id)
@@ -218,8 +247,12 @@ class AgentService:
 
         history = [
             self._message_to_adapter_dict(message)
-            for message in message_repo.list_for_conversation(user_id, run.conversation_id, limit=500)
-            if message.sequence_no < input_message.sequence_no
+            for message in message_repo.list_recent_before_sequence(
+                user_id,
+                run.conversation_id,
+                before_sequence_no=input_message.sequence_no,
+                limit=500,
+            )
         ]
 
         streaming_supported = self.session_manager.supports_streaming()
@@ -240,6 +273,7 @@ class AgentService:
                     conversation_id=run.conversation_id,
                     history=history,
                     user_message=self._message_to_adapter_dict(input_message),
+                    web_search_enabled=web_search_enabled,
                     **streaming_callbacks,
                 )
             else:
@@ -248,6 +282,7 @@ class AgentService:
                     conversation_id=run.conversation_id,
                     history=history,
                     user_message=self._message_to_adapter_dict(input_message),
+                    web_search_enabled=web_search_enabled,
                 )
         except Exception as exc:
             result = AgentTurnResult(error=f"{type(exc).__name__}: {exc}")

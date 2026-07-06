@@ -23,12 +23,13 @@ class RunWorkerService:
         self.db_session_factory = db_session_factory
         self.session_manager = session_manager or get_default_agent_session_manager()
 
-    def execute_run(self, user_id: str, run_id: str) -> None:
+    def execute_run(self, user_id: str, run_id: str, web_search_enabled: bool = False) -> None:
         db = self.db_session_factory()
         try:
             AgentService(db, session_manager=self.session_manager).execute_run(
                 user_id=user_id,
                 run_id=run_id,
+                web_search_enabled=web_search_enabled,
             )
         except AgentTurnExecutionError:
             return
@@ -54,4 +55,3 @@ class RunWorkerService:
         )
         run_repo.mark_failed(run.id, user_id, public_error)
         db.commit()
-

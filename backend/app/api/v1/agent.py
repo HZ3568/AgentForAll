@@ -11,14 +11,18 @@ from backend.app.core.database import SessionLocal, get_db
 from backend.app.core.deps import require_active_user
 from backend.app.models.user import User
 from backend.app.repositories.agent_runs import AgentRunRepository
+from backend.app.repositories.conversations import ConversationRepository
 from backend.app.repositories.run_events import RunEventRepository
+from backend.app.repositories.tool_calls import ToolCallRepository
 from backend.app.runtime.session_manager import AgentRunConflict
 from backend.app.schemas.agent import (
     AgentRunCancelResponse,
     AgentRunCreateRequest,
     AgentRunCreateResponse,
     AgentRunEventsResponse,
+    AgentRunListResponse,
     AgentRunRead,
+    AgentRunToolCallsResponse,
     AgentTurnRequest,
     AgentTurnResponse,
 )
@@ -66,6 +70,7 @@ def run_agent_turn(
             user_id=current_user.id,
             conversation_id=conversation_id,
             content=payload.content,
+            web_search_enabled=payload.web_search_enabled,
         )
     except AgentConversationNotFound as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found.") from exc
@@ -110,6 +115,7 @@ def create_agent_run(
             user_id=current_user.id,
             conversation_id=conversation_id,
             content=payload.content,
+            web_search_enabled=payload.web_search_enabled,
         )
     except AgentConversationNotFound as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found.") from exc
@@ -119,7 +125,12 @@ def create_agent_run(
             detail="Conversation already has a running agent turn.",
         ) from exc
 
-    background_tasks.add_task(worker.execute_run, current_user.id, created.run.id)
+    background_tasks.add_task(
+        worker.execute_run,
+        current_user.id,
+        created.run.id,
+        created.web_search_enabled,
+    )
     return AgentRunCreateResponse(
         run_id=created.run.id,
         conversation_id=created.run.conversation_id,
@@ -127,6 +138,26 @@ def create_agent_run(
         user_message=created.user_message,
         events_url=created.events_url,
     )
+
+
+@router.get("/conversations/{conversation_id}/runs", response_model=AgentRunListResponse)
+def list_conversation_runs(
+    conversation_id: str,
+    current_user: Annotated[User, Depends(require_active_user)],
+    db: Annotated[Session, Depends(get_db)],
+    status_filter: Annotated[str | None, Query(alias="status")] = None,
+    limit: Annotated[int, Query(ge=1, le=20)] = 10,
+) -> AgentRunListResponse:
+    conversation = ConversationRepository(db).get_active_for_user(conversation_id, current_user.id)
+    if conversation is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found.")
+
+    run_repo = AgentRunRepository(db)
+    if status_filter == "active":
+        runs = run_repo.list_active_for_conversation(current_user.id, conversation_id)[:limit]
+    else:
+        runs = run_repo.list_for_conversation(current_user.id, conversation_id, limit=limit)
+    return AgentRunListResponse(items=runs)
 
 
 @router.get("/runs/{run_id}", response_model=AgentRunRead)
@@ -139,6 +170,18 @@ def get_agent_run(
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found.")
     return run
+
+
+@router.get("/runs/{run_id}/tool-calls", response_model=AgentRunToolCallsResponse)
+def list_agent_run_tool_calls(
+    run_id: str,
+    current_user: Annotated[User, Depends(require_active_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> AgentRunToolCallsResponse:
+    if AgentRunRepository(db).get_for_user(run_id, current_user.id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found.")
+    calls = ToolCallRepository(db).list_for_run(current_user.id, run_id)
+    return AgentRunToolCallsResponse(run_id=run_id, items=calls)
 
 
 @router.get("/runs/{run_id}/events", response_model=AgentRunEventsResponse)

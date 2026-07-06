@@ -52,6 +52,7 @@ class AgentSessionManager:
         conversation_id: str,
         history: list[dict[str, Any]],
         user_message: dict[str, Any],
+        web_search_enabled: bool = False,
     ) -> AgentTurnResult:
         with self.conversation_lock(user_id, conversation_id):
             return self.run_turn_unlocked(
@@ -59,6 +60,7 @@ class AgentSessionManager:
                 conversation_id=conversation_id,
                 history=history,
                 user_message=user_message,
+                web_search_enabled=web_search_enabled,
             )
 
     def run_turn_unlocked(
@@ -68,6 +70,7 @@ class AgentSessionManager:
         conversation_id: str,
         history: list[dict[str, Any]],
         user_message: dict[str, Any],
+        web_search_enabled: bool = False,
     ) -> AgentTurnResult:
         workspace_path = self.prepare_workspace(user_id, conversation_id)
         memory_path = self.prepare_user_memory(user_id)
@@ -78,6 +81,7 @@ class AgentSessionManager:
             user_message=user_message,
             workspace_path=str(workspace_path),
             memory_path=str(memory_path),
+            web_search_enabled=web_search_enabled,
         )
 
     def run_turn_streaming_unlocked(
@@ -90,6 +94,7 @@ class AgentSessionManager:
         on_event: Callable[[AgentEventRecord], None] | None = None,
         on_tool_call: Callable[[AgentToolCallRecord], None] | None = None,
         on_tool_result: Callable[[AgentToolResultRecord], None] | None = None,
+        web_search_enabled: bool = False,
     ) -> AgentTurnResult:
         if not self.supports_streaming():
             return self.run_turn_unlocked(
@@ -97,6 +102,7 @@ class AgentSessionManager:
                 conversation_id=conversation_id,
                 history=history,
                 user_message=user_message,
+                web_search_enabled=web_search_enabled,
             )
 
         workspace_path = self.prepare_workspace(user_id, conversation_id)
@@ -111,6 +117,7 @@ class AgentSessionManager:
             on_event=on_event,
             on_tool_call=on_tool_call,
             on_tool_result=on_tool_result,
+            web_search_enabled=web_search_enabled,
         )
 
     def supports_streaming(self) -> bool:

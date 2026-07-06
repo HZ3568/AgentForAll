@@ -14,6 +14,7 @@ from backend.app.models.agent_run import AgentRun
 from backend.app.models.message import Message
 from backend.app.models.run_event import RunEvent
 from backend.app.models.tool_call import ToolCall
+from backend.app.repositories.messages import MessageRepository
 from backend.app.runtime.session_manager import AgentSessionManager
 from backend.app.runtime.types import (
     AgentEventRecord,
@@ -27,8 +28,10 @@ from backend.app.services.agent_service import AgentService, AgentTurnExecutionE
 class FakeAdapter:
     def __init__(self, *, fail: bool = False) -> None:
         self.fail = fail
+        self.calls = []
 
     def run_turn(self, **kwargs):
+        self.calls.append(kwargs)
         if self.fail:
             raise RuntimeError("adapter failed")
         return AgentTurnResult(
@@ -103,14 +106,36 @@ class FakeStreamingAdapter:
         )
 
 
+class CapturingHistoryAdapter:
+    def __init__(self) -> None:
+        self.histories = []
+
+    def run_turn_streaming(self, **kwargs):
+        self.histories.append(kwargs["history"])
+        return AgentTurnResult(
+            assistant_messages=[
+                {
+                    "role": "assistant",
+                    "content_json": {"type": "text", "text": "captured"},
+                    "content_text": "captured",
+                }
+            ],
+            final_text="captured",
+        )
+
+
 class ImmediateWorker:
     def __init__(self, db: Session, manager: AgentSessionManager) -> None:
         self.db = db
         self.manager = manager
 
-    def execute_run(self, user_id: str, run_id: str) -> None:
+    def execute_run(self, user_id: str, run_id: str, web_search_enabled: bool = False) -> None:
         try:
-            AgentService(self.db, session_manager=self.manager).execute_run(user_id=user_id, run_id=run_id)
+            AgentService(self.db, session_manager=self.manager).execute_run(
+                user_id=user_id,
+                run_id=run_id,
+                web_search_enabled=web_search_enabled,
+            )
         except AgentTurnExecutionError:
             return
 
@@ -177,6 +202,23 @@ def test_create_run_executes_and_persists_events(app_client: TestClient, db_sess
         "tool_result_created",
         "run_finished",
     }
+
+
+def test_create_run_passes_web_search_enabled_to_adapter(app_client: TestClient, db_session: Session, tmp_path):
+    adapter = FakeAdapter()
+    manager = AgentSessionManager(adapter=adapter, workspace_root=tmp_path)
+    install_fake_agent_overrides(db_session, manager)
+    headers = auth_headers(app_client, "alice", "alice@example.com")
+    conversation = create_conversation(app_client, headers)
+
+    response = app_client.post(
+        f"/api/v1/agent/conversations/{conversation['id']}/runs",
+        json={"content": "今年高考本科分数线", "web_search_enabled": True},
+        headers=headers,
+    )
+
+    assert response.status_code == 202
+    assert adapter.calls[0]["web_search_enabled"] is True
 
 
 def test_run_status_and_events_are_user_isolated(app_client: TestClient, db_session: Session, tmp_path):
@@ -265,6 +307,69 @@ def test_streaming_run_persists_deltas_and_tools_before_final_message(
     assert tool_calls[0].status == "succeeded"
 
 
+def test_active_run_endpoint_returns_current_conversation_run(
+    app_client: TestClient,
+    db_session: Session,
+    tmp_path,
+):
+    manager = AgentSessionManager(adapter=FakeAdapter(), workspace_root=tmp_path)
+    install_fake_agent_overrides(db_session, manager)
+    headers = auth_headers(app_client, "alice", "alice@example.com")
+    conversation = create_conversation(app_client, headers)
+    user_id = app_client.get("/api/v1/auth/me", headers=headers).json()["id"]
+    run = AgentRun(
+        user_id=user_id,
+        conversation_id=conversation["id"],
+        status="running",
+    )
+    db_session.add(run)
+    db_session.commit()
+
+    response = app_client.get(
+        f"/api/v1/agent/conversations/{conversation['id']}/runs?status=active&limit=1",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["items"]) == 1
+    assert body["items"][0]["id"] == run.id
+    assert body["items"][0]["status"] == "running"
+
+
+def test_tool_call_detail_endpoint_includes_result_and_is_user_isolated(
+    app_client: TestClient,
+    db_session: Session,
+    tmp_path,
+):
+    manager = AgentSessionManager(adapter=FakeAdapter(), workspace_root=tmp_path)
+    install_fake_agent_overrides(db_session, manager)
+    headers_a = auth_headers(app_client, "alice", "alice@example.com")
+    headers_b = auth_headers(app_client, "bob", "bob@example.com")
+    conversation = create_conversation(app_client, headers_a)
+    created = app_client.post(
+        f"/api/v1/agent/conversations/{conversation['id']}/runs",
+        json={"content": "read README"},
+        headers=headers_a,
+    ).json()
+
+    own_response = app_client.get(
+        f"/api/v1/agent/runs/{created['run_id']}/tool-calls",
+        headers=headers_a,
+    )
+    other_response = app_client.get(
+        f"/api/v1/agent/runs/{created['run_id']}/tool-calls",
+        headers=headers_b,
+    )
+
+    assert own_response.status_code == 200
+    assert other_response.status_code == 404
+    body = own_response.json()
+    assert body["run_id"] == created["run_id"]
+    assert body["items"][0]["tool_name"] == "read_file"
+    assert body["items"][0]["result"]["output_text"] == "README content"
+
+
 def test_second_run_for_same_conversation_is_rejected_while_active(
     app_client: TestClient,
     db_session: Session,
@@ -317,3 +422,36 @@ def test_failed_background_run_marks_failed_and_releases_lock(
     )
 
     assert second.status_code == 202
+
+
+def test_run_uses_recent_history_before_input_message(
+    app_client: TestClient,
+    db_session: Session,
+    tmp_path,
+):
+    adapter = CapturingHistoryAdapter()
+    manager = AgentSessionManager(adapter=adapter, workspace_root=tmp_path)
+    install_fake_agent_overrides(db_session, manager)
+    headers = auth_headers(app_client, "alice", "alice@example.com")
+    conversation = create_conversation(app_client, headers)
+    user_id = app_client.get("/api/v1/auth/me", headers=headers).json()["id"]
+    message_repo = MessageRepository(db_session)
+    for index in range(505):
+        message_repo.create_user_message(
+            user_id=user_id,
+            conversation_id=conversation["id"],
+            content=f"old {index}",
+        )
+    db_session.commit()
+
+    response = app_client.post(
+        f"/api/v1/agent/conversations/{conversation['id']}/runs",
+        json={"content": "latest request"},
+        headers=headers,
+    )
+
+    assert response.status_code == 202
+    captured = adapter.histories[0]
+    assert len(captured) == 500
+    assert captured[0]["content_text"] == "old 5"
+    assert captured[-1]["content_text"] == "old 504"

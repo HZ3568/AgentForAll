@@ -10,6 +10,7 @@ from backend.app.schemas.message import MessageRead
 
 class AgentTurnRequest(BaseModel):
     content: str = Field(min_length=1, max_length=20000)
+    web_search_enabled: bool = False
 
     @field_validator("content")
     @classmethod
@@ -36,6 +37,10 @@ class AgentRunRead(BaseModel):
     created_at: datetime
 
 
+class AgentRunListResponse(BaseModel):
+    items: list[AgentRunRead]
+
+
 class AgentRunEventRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -58,6 +63,27 @@ class AgentToolCallRead(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     created_at: datetime
+
+
+class AgentToolResultRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    output_text: str | None = None
+    output_json: dict[str, Any] | list[Any] | None = None
+    evidence_json: dict[str, Any] | list[Any] | None = None
+    error_type: str | None = None
+    created_at: datetime
+
+
+class AgentToolCallDetailRead(AgentToolCallRead):
+    tool_input_json: dict[str, Any] | list[Any] | None = None
+    result: AgentToolResultRead | None = None
+
+
+class AgentRunToolCallsResponse(BaseModel):
+    run_id: str
+    items: list[AgentToolCallDetailRead]
 
 
 class AgentTurnResponse(BaseModel):

@@ -23,6 +23,15 @@ RuntimeFactory = Callable[[str | None], Any]
 LoopRunner = Callable[[Any, list[dict[str, Any]], dict[str, Any]], None]
 
 
+WEB_SEARCH_REQUIRED_PREFIX = (
+    "<web_search_required>\n"
+    "本轮用户已开启网页搜索。必须先调用 web_search 检索当前用户问题，再基于搜索结果回答。"
+    "如果 web_search 不可用、失败或结果不足，明确说明失败原因和无法确认的范围，不要编造实时信息。\n"
+    "</web_search_required>\n\n"
+    "用户原始问题：\n"
+)
+
+
 class AgentRuntimeAdapter:
     """Adapts persisted backend messages to codeagent's in-place agent loop."""
 
@@ -43,11 +52,17 @@ class AgentRuntimeAdapter:
         user_message: dict[str, Any],
         workspace_path: str | None = None,
         memory_path: str | None = None,
+        web_search_enabled: bool = False,
     ) -> AgentTurnResult:
         del conversation_id, user_id
         messages = [self._to_codeagent_message(message) for message in history]
-        messages.append(self._to_codeagent_message(user_message))
-        turn_start = len(messages)
+        messages.append(
+            self._with_web_search_instruction(
+                self._to_codeagent_message(user_message),
+                web_search_enabled,
+            )
+        )
+        original_message_ids = self._message_identity_snapshot(messages)
 
         try:
             runtime = self._create_runtime(workspace_path, memory_path)
@@ -68,7 +83,7 @@ class AgentRuntimeAdapter:
                 error=f"{type(exc).__name__}: {exc}",
             )
 
-        new_messages = messages[turn_start:]
+        new_messages = self._collect_new_messages(messages, original_message_ids)
         return self._collect_result(new_messages)
 
     def run_turn_streaming(
@@ -83,15 +98,22 @@ class AgentRuntimeAdapter:
         on_event: Callable[[AgentEventRecord], None] | None = None,
         on_tool_call: Callable[[AgentToolCallRecord], None] | None = None,
         on_tool_result: Callable[[AgentToolResultRecord], None] | None = None,
+        web_search_enabled: bool = False,
     ) -> AgentTurnResult:
         del conversation_id, user_id
         messages = [self._to_codeagent_message(message) for message in history]
-        messages.append(self._to_codeagent_message(user_message))
-        turn_start = len(messages)
+        messages.append(
+            self._with_web_search_instruction(
+                self._to_codeagent_message(user_message),
+                web_search_enabled,
+            )
+        )
+        original_message_ids = self._message_identity_snapshot(messages)
         streamed_events: list[AgentEventRecord] = []
         streamed_tool_calls: list[AgentToolCallRecord] = []
         streamed_tool_results: list[AgentToolResultRecord] = []
         delta_buffer: list[str] = []
+        streamed_text_parts: list[str] = []
         last_flush = time.monotonic()
 
         def emit_event(event: AgentEventRecord) -> None:
@@ -117,6 +139,7 @@ class AgentRuntimeAdapter:
             )
 
         def on_text_delta(delta: str) -> None:
+            streamed_text_parts.append(delta)
             delta_buffer.append(delta)
             flush_delta()
 
@@ -184,11 +207,47 @@ class AgentRuntimeAdapter:
                 error=f"{type(exc).__name__}: {exc}",
             )
 
-        new_messages = messages[turn_start:]
+        new_messages = self._collect_new_messages(messages, original_message_ids)
         result = self._collect_result(new_messages)
+        if not result.assistant_messages:
+            result = self._with_streamed_text_fallback(result, "".join(streamed_text_parts))
         result.events = streamed_events
         result.tool_calls = streamed_tool_calls
         result.tool_results = streamed_tool_results
+        return result
+
+    def _message_identity_snapshot(
+        self,
+        messages: list[dict[str, Any]],
+    ) -> tuple[dict[str, Any], ...]:
+        return tuple(messages)
+
+    def _collect_new_messages(
+        self,
+        messages: list[dict[str, Any]],
+        original_messages: tuple[dict[str, Any], ...],
+    ) -> list[dict[str, Any]]:
+        return [
+            message
+            for message in messages
+            if not any(message is original for original in original_messages)
+        ]
+
+    def _with_streamed_text_fallback(
+        self,
+        result: AgentTurnResult,
+        streamed_text: str,
+    ) -> AgentTurnResult:
+        if not streamed_text.strip():
+            return result
+        result.assistant_messages = [
+            {
+                "role": "assistant",
+                "content_json": {"type": "text", "text": streamed_text},
+                "content_text": streamed_text,
+            }
+        ]
+        result.final_text = streamed_text
         return result
 
     def _create_runtime(self, workspace_path: str | None, memory_path: str | None = None) -> Any:
@@ -212,6 +271,26 @@ class AgentRuntimeAdapter:
             encoding="utf-8",
         )
         return self._runtime_factory(str(config_path))
+
+    def _with_web_search_instruction(
+        self,
+        message: dict[str, Any],
+        enabled: bool,
+    ) -> dict[str, Any]:
+        if not enabled:
+            return message
+        content = message.get("content")
+        if isinstance(content, str):
+            return {**message, "content": WEB_SEARCH_REQUIRED_PREFIX + content}
+        if isinstance(content, list):
+            return {
+                **message,
+                "content": [
+                    {"type": "text", "text": WEB_SEARCH_REQUIRED_PREFIX.strip()},
+                    *content,
+                ],
+            }
+        return {**message, "content": WEB_SEARCH_REQUIRED_PREFIX + str(content or "")}
 
     def _to_codeagent_message(self, message: dict[str, Any]) -> dict[str, Any]:
         role = str(message.get("role") or "user")

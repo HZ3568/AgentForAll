@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getMemoryIndex, listWorkspaceFiles } from '../api/conversations';
+import {
+  getWorkspaceFileBlob,
+  getWorkspaceFilePreview,
+} from '../api/conversations';
 import { createAgentRun } from '../api/runs';
 import { AgentWorkbench } from '../components/AgentWorkbench';
 import { ChatWindow } from '../components/ChatWindow';
@@ -8,7 +11,7 @@ import { useActiveRun } from '../hooks/useActiveRun';
 import { useConversationMessages } from '../hooks/useConversationMessages';
 import { useConversations } from '../hooks/useConversations';
 import type { User } from '../types/auth';
-import type { Conversation, WorkspaceFile } from '../types/conversation';
+import type { Conversation, WorkspaceFilePreview } from '../types/conversation';
 import {
   generateConversationTitle,
   shouldAutoTitleConversation,
@@ -21,8 +24,12 @@ interface ChatPageProps {
 
 export function ChatPage({ user, onLogout }: ChatPageProps) {
   const [error, setError] = useState('');
-  const [memoryIndex, setMemoryIndex] = useState<string | null>(null);
-  const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([]);
+  const [artifactPanelOpen, setArtifactPanelOpen] = useState(true);
+  const [preview, setPreview] = useState<WorkspaceFilePreview | null>(null);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const previewBlobUrlRef = useRef<string | null>(null);
   const recoveredConversationId = useRef<string | null>(null);
 
   const showError = useCallback((message: string) => {
@@ -60,11 +67,9 @@ export function ChatPage({ user, onLogout }: ChatPageProps) {
     resetRunState,
     runAnchorMessageId,
     runError,
-    runEvents,
     runIsActive,
     runStatus,
     streamingText,
-    toolCalls,
   } = useActiveRun({
     appendMessageOnce,
     conversation: selected,
@@ -76,9 +81,20 @@ export function ChatPage({ user, onLogout }: ChatPageProps) {
 
   useEffect(() => {
     resetRunState();
-    setMemoryIndex(null);
-    setWorkspaceFiles([]);
+    setPreview(null);
+    setPreviewError(null);
+    setPreviewLoading(false);
+    replacePreviewBlobUrl(null);
   }, [resetRunState, selected?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (previewBlobUrlRef.current) {
+        URL.revokeObjectURL(previewBlobUrlRef.current);
+        previewBlobUrlRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (runError) {
@@ -99,31 +115,6 @@ export function ChatPage({ user, onLogout }: ChatPageProps) {
     recoveredConversationId.current = selected.id;
     recoverActiveRun(messages).catch((err) => showError(err instanceof Error ? err.message : 'Run recovery failed'));
   }, [messages, messagesLoading, recoverActiveRun, selected, showError]);
-
-  useEffect(() => {
-    if (!selected) {
-      setMemoryIndex(null);
-      setWorkspaceFiles([]);
-      return;
-    }
-    let cancelled = false;
-    Promise.all([listWorkspaceFiles(selected.id), getMemoryIndex(selected.id)])
-      .then(([files, memory]) => {
-        if (!cancelled) {
-          setWorkspaceFiles(files);
-          setMemoryIndex(memory);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setMemoryIndex(null);
-          setWorkspaceFiles([]);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selected?.id, runStatus]);
 
   async function handleCreateConversation() {
     setError('');
@@ -172,6 +163,37 @@ export function ChatPage({ user, onLogout }: ChatPageProps) {
     }
   }
 
+  function replacePreviewBlobUrl(nextUrl: string | null) {
+    if (previewBlobUrlRef.current) {
+      URL.revokeObjectURL(previewBlobUrlRef.current);
+    }
+    previewBlobUrlRef.current = nextUrl;
+    setPreviewBlobUrl(nextUrl);
+  }
+
+  async function handleWorkspaceLinkPreview(path: string) {
+    if (!selected) {
+      return;
+    }
+    setArtifactPanelOpen(true);
+    setPreview(null);
+    setPreviewError(null);
+    setPreviewLoading(true);
+    replacePreviewBlobUrl(null);
+    try {
+      const nextPreview = await getWorkspaceFilePreview(selected.id, path);
+      setPreview(nextPreview);
+      if (['pdf', 'image', 'download_only'].includes(nextPreview.preview_type)) {
+        const blob = await getWorkspaceFileBlob(selected.id, path);
+        replacePreviewBlobUrl(URL.createObjectURL(blob));
+      }
+    } catch (err) {
+      setPreviewError(err instanceof Error ? err.message : '文件预览失败');
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
   async function renameConversationFromMessage(conversation: Conversation, content: string) {
     const title = generateConversationTitle(content);
     if (!title || title === conversation.title) {
@@ -206,26 +228,37 @@ export function ChatPage({ user, onLogout }: ChatPageProps) {
           </div>
         )}
         {conversationsLoading && <div className="loading-strip">Loading conversations...</div>}
-        <div className="chat-workspace">
+        <div className={artifactPanelOpen ? 'chat-workspace' : 'chat-workspace artifact-panel-closed'}>
           <ChatWindow
             activeRunId={activeRunId}
             conversation={selected}
             loadingMessages={messagesLoading}
             messages={messages}
             onCancelRun={cancelActiveRun}
+            onPreviewWorkspaceFile={handleWorkspaceLinkPreview}
             onSend={handleSend}
             runAnchorMessageId={runAnchorMessageId}
             runIsActive={runIsActive}
             runStatus={runStatus}
             streamingText={streamingText}
           />
+          {!artifactPanelOpen && (
+            <button
+              aria-label="打开展示栏"
+              className="artifact-open-button"
+              onClick={() => setArtifactPanelOpen(true)}
+              type="button"
+            >
+              展示栏
+            </button>
+          )}
           <AgentWorkbench
-            activeRunId={activeRunId}
-            memoryIndex={memoryIndex}
-            runEvents={runEvents}
-            runStatus={runStatus}
-            toolCalls={toolCalls}
-            workspaceFiles={workspaceFiles}
+            onTogglePanel={() => setArtifactPanelOpen((open) => !open)}
+            panelOpen={artifactPanelOpen}
+            preview={preview}
+            previewBlobUrl={previewBlobUrl}
+            previewError={previewError}
+            previewLoading={previewLoading}
           />
         </div>
       </section>

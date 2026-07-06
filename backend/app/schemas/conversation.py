@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -55,6 +56,17 @@ class WorkspaceFileRead(BaseModel):
 
 class WorkspaceFileListResponse(BaseModel):
     items: list[WorkspaceFileRead]
+
+
+class WorkspaceFilePreviewResponse(BaseModel):
+    relative_path: str
+    filename: str
+    preview_type: Literal["text", "markdown", "docx_html", "pdf", "image", "download_only"]
+    media_type: str | None = None
+    content: str | None = None
+    html: str | None = None
+    size_bytes: int
+    error_message: str | None = None
 
 
 class MemoryIndexResponse(BaseModel):

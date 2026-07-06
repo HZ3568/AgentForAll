@@ -1,4 +1,4 @@
-import { LogOut, MessageSquarePlus, Trash2, X } from 'lucide-react';
+import { AlarmClock, AppWindow, LogOut, MessageSquarePlus, MoreHorizontal, Plug, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
 import type { User } from '../types/auth';
 import type { Conversation } from '../types/conversation';
@@ -36,63 +36,94 @@ export function ConversationSidebar({
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-account">
+      <div className="sidebar-brand">
         <div className="brand-mark">A</div>
-        <div>
-          <h2>AgentForAll</h2>
-          <p>{user ? user.email : 'Loading user...'}</p>
-        </div>
+        <button aria-label="折叠侧边栏" className="sidebar-mini-toggle" type="button">
+          <AppWindow aria-hidden="true" size={17} />
+        </button>
       </div>
-      <button className="new-chat-button" onClick={onCreate} type="button">
+
+      <button aria-label="新建会话" className="new-chat-button" onClick={onCreate} type="button">
         <MessageSquarePlus aria-hidden="true" size={17} />
-        <span>New chat</span>
+        <span>新建会话</span>
+        <kbd>Ctrl</kbd>
+        <kbd>K</kbd>
       </button>
-      <nav className="conversation-list">
-        {conversations.map((conversation) => (
-          <div
-            className={conversation.id === selectedId ? 'conversation active' : 'conversation'}
-            key={conversation.id}
-          >
-            <button
-              aria-current={conversation.id === selectedId ? 'page' : undefined}
-              className="conversation-main"
-              onClick={() => onSelect(conversation)}
-              title={conversation.title}
-              type="button"
-            >
-              <span>{conversation.title}</span>
-              <small>{formatConversationMeta(conversation)}</small>
-            </button>
-            <button
-              aria-label={`Delete ${conversation.title}`}
-              className="conversation-delete"
-              disabled={deletingId === conversation.id}
-              onClick={() => setPendingDelete(conversation)}
-              title="Delete conversation"
-              type="button"
-            >
-              <Trash2 aria-hidden="true" size={15} />
-            </button>
-          </div>
-        ))}
-        {conversations.length === 0 && (
-          <div className="empty-conversations">
-            <strong>No chats yet</strong>
-            <span>Start a conversation and it will appear here.</span>
-          </div>
-        )}
+
+      <nav className="sidebar-nav" aria-label="功能">
+        <button className="sidebar-nav-item" type="button">
+          <Plug aria-hidden="true" size={17} />
+          <span>插件</span>
+        </button>
+        <button className="sidebar-nav-item" type="button">
+          <AlarmClock aria-hidden="true" size={17} />
+          <span>定时任务</span>
+        </button>
+        <button className="sidebar-nav-item" type="button">
+          <MoreHorizontal aria-hidden="true" size={17} />
+          <span>更多</span>
+        </button>
       </nav>
-      <button className="secondary" onClick={onLogout} type="button">
-        <LogOut aria-hidden="true" size={16} />
-        <span>Logout</span>
-      </button>
+
+      <div className="sidebar-conversations">
+        <span className="sidebar-section-label">对话</span>
+        <nav className="conversation-list" aria-label="对话">
+          {conversations.map((conversation) => (
+            <div
+              className={conversation.id === selectedId ? 'conversation active' : 'conversation'}
+              key={conversation.id}
+            >
+              <button
+                aria-current={conversation.id === selectedId ? 'page' : undefined}
+                className="conversation-main"
+                onClick={() => onSelect(conversation)}
+                title={conversation.title}
+                type="button"
+              >
+                <span>{conversation.title}</span>
+              </button>
+              <button
+                aria-label={`删除 ${conversation.title}`}
+                className="conversation-delete"
+                disabled={deletingId === conversation.id}
+                onClick={() => setPendingDelete(conversation)}
+                title="删除对话"
+                type="button"
+              >
+                <Trash2 aria-hidden="true" size={15} />
+              </button>
+            </div>
+          ))}
+          {conversations.length === 0 && (
+            <div className="empty-conversations">
+              <strong>暂无对话</strong>
+              <span>开始一次对话后会出现在这里。</span>
+            </div>
+          )}
+        </nav>
+      </div>
+
+      <div className="sidebar-footer">
+        <div className="sidebar-account">
+          <div className="account-avatar">{user?.username?.slice(0, 1).toUpperCase() ?? 'A'}</div>
+          <div>
+            <strong>{user?.username ?? '用户'}</strong>
+            <p>{user ? user.email : '正在加载用户...'}</p>
+          </div>
+        </div>
+        <button className="secondary" onClick={onLogout} type="button">
+          <LogOut aria-hidden="true" size={16} />
+          <span>退出登录</span>
+        </button>
+      </div>
+
       {pendingDelete && (
         <div aria-modal="true" className="dialog-backdrop" role="dialog">
           <section className="dialog-panel">
             <div className="dialog-title-row">
-              <h3>Delete conversation?</h3>
+              <h3>删除这个对话？</h3>
               <button
-                aria-label="Close delete dialog"
+                aria-label="关闭删除确认"
                 className="icon-button"
                 onClick={() => setPendingDelete(null)}
                 type="button"
@@ -103,10 +134,15 @@ export function ConversationSidebar({
             <p>{pendingDelete.title}</p>
             <div className="dialog-actions">
               <button className="secondary" onClick={() => setPendingDelete(null)} type="button">
-                Cancel
+                取消
               </button>
-              <button className="danger-button" disabled={deletingId === pendingDelete.id} onClick={confirmDelete} type="button">
-                Delete
+              <button
+                className="danger-button"
+                disabled={deletingId === pendingDelete.id}
+                onClick={confirmDelete}
+                type="button"
+              >
+                删除
               </button>
             </div>
           </section>
@@ -114,16 +150,4 @@ export function ConversationSidebar({
       )}
     </aside>
   );
-}
-
-function formatConversationMeta(conversation: Conversation): string {
-  const value = conversation.last_message_at ?? conversation.updated_at;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return conversation.status;
-  }
-  return `${conversation.status} · ${date.toLocaleDateString([], {
-    month: 'short',
-    day: 'numeric',
-  })}`;
 }

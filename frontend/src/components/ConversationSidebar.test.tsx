@@ -39,12 +39,17 @@ describe('ConversationSidebar', () => {
       />,
     );
 
-    await user.click(screen.getByLabelText('Delete Important chat'));
+    expect(screen.getByRole('button', { name: '新建会话' })).toBeInTheDocument();
+    expect(screen.getByText('插件')).toBeInTheDocument();
+    expect(screen.getByText('定时任务')).toBeInTheDocument();
+    expect(screen.getByText('更多')).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('删除 Important chat'));
 
     expect(onDelete).not.toHaveBeenCalled();
-    expect(screen.getByRole('dialog')).toHaveTextContent('Delete conversation?');
+    expect(screen.getByRole('dialog')).toHaveTextContent('删除这个对话？');
 
-    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await user.click(screen.getByRole('button', { name: '删除' }));
 
     expect(onDelete).toHaveBeenCalledWith(conversation);
   });

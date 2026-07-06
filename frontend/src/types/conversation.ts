@@ -24,6 +24,25 @@ export interface WorkspaceFileListResponse {
   items: WorkspaceFile[];
 }
 
+export type WorkspaceFilePreviewType =
+  | 'text'
+  | 'markdown'
+  | 'docx_html'
+  | 'pdf'
+  | 'image'
+  | 'download_only';
+
+export interface WorkspaceFilePreview {
+  relative_path: string;
+  filename: string;
+  preview_type: WorkspaceFilePreviewType;
+  media_type: string | null;
+  content: string | null;
+  html: string | null;
+  size_bytes: number;
+  error_message: string | null;
+}
+
 export interface MemoryIndexResponse {
   content: string | null;
 }
